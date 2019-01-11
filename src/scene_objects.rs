@@ -49,18 +49,18 @@ impl Object3D for Sphere {
         } else {
             let v1 = -t1;
             let v2 = radicant.sqrt();
-            //let d : f64;
-            if v1 - v2 >= 0.0 {
-                return Some(HitRecord {
-                    distance: v1 - v2,
-                    object: self,
-                });
-            } else {
-                return Some(HitRecord {
-                    distance: v1 + v2,
-                    object: self,
-                });
+
+            if v1+v2 < 0.0 { // all intersection points lie behind ray_src
+                return None;
             }
+
+            return Some(HitRecord {
+                distance: match  v1 - v2 >= 0.0 {
+                  true => v1 - v2,
+                  false =>v1 + v2
+                },
+                object: self,
+            });
         }
     }
 
@@ -88,8 +88,8 @@ impl Object3D for Plane {
     fn hit(&self, ray_src: &Vec3, ray_dir: &Vec3) -> Option<HitRecord> {
         //from https://en.wikipedia.org/wiki/Line%E2%80%93plane_intersection
         let denom = Vec3::dot(ray_dir, &self.normal);
-        let num = (ray_src - &self.point).dot(&self.normal);
-
+        let num = (&self.point - ray_src ).dot(&self.normal);
+        //println!("test plane with {}/{}", num, denom);
         // denom is zero or num and denom differ in sign --> quotient would be negative
         if denom == 0.0 || num * denom < 0.0 {
             return None;
