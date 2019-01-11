@@ -10,7 +10,6 @@ pub struct Vec3 {
 
 use std::fmt;
 use std::ops;
-use math3d::rand::Rng;
 
 impl fmt::Display for Vec3 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -110,8 +109,12 @@ impl Vec3 {
         );
     }
 
-    pub fn get_cosine_distributed_random_ray(&self) -> Vec3 {
-        let mut rng = rand::thread_rng();
+    pub fn reflect_at(&self, normal: &Vec3) -> Vec3 {
+        //copied from the internet, not verified
+        self - &(normal * Vec3::dot(&self, &normal) * 2.0)
+    }
+
+    pub fn get_cosine_distributed_random_ray(&self, rng: &mut rand::Rng) -> Vec3 {
         // Step 1:Compute a uniformly distributed point on the unit disk
         let r = f64::sqrt(rng.next_f64());
         let phi = 2.0 * std::f64::consts::PI * rng.next_f64();
