@@ -18,6 +18,20 @@ fn push_color( image_data: &mut Vec<u8>, col:&Vec3) {
     image_data.push( 255 );
 }
 
+fn ambient_occlusion(objects: &Vec<Box<scene_objects::Object3D>>, pos: &Vec3, normal: &Vec3, rng: &mut rand::Rng, num_samples: u32, distance_cutoff: f64) -> f64 {
+    let mut num_hits = 0;
+    for _ in 0..num_samples {
+        let d = normal.get_cosine_distributed_random_ray(rng);
+        if let Some(hit) = trace_ray( &objects, &pos, &d) {
+            if hit.distance < distance_cutoff {
+                num_hits += 1;
+            }
+        }
+    }
+
+    1.0 - (num_hits as f64) / (num_samples as f64)
+}
+
 fn trace_ray<'a>(objects: &'a Vec<Box<scene_objects::Object3D>>, ray_src: &Vec3, ray_dir: &Vec3) -> Option<scene_objects::HitRecord<'a>>
 {
     //println!("tracing ray from {} with {}", ray_src, ray_dir);
@@ -41,6 +55,17 @@ fn trace_ray<'a>(objects: &'a Vec<Box<scene_objects::Object3D>>, ray_src: &Vec3,
     hit_obj
 }
 
+fn clamp(v: f64, min: f64, max: f64) -> f64{
+    if v < min {
+        return min;
+    }
+
+    if v > max {
+        return max
+    }
+
+    v
+}
 
 fn main() {
 
@@ -94,6 +119,7 @@ fn main() {
         Vec3::new(0.1, 0.5, 0.1),
     )));
     let mut rng = rand::XorShiftRng::new_unseeded();
+    let ambient = 0.3;
 
     let ray_src = Vec3::new(0.0, 0.0, 0.0);
     let light_dir = Vec3::new(-1.0, -1.0, -1.0).normalized();
@@ -109,27 +135,23 @@ fn main() {
             if let Some(mut obj) = hit_obj {
                 let p_hit = &ray_src + &v * obj.distance;
                 let n = obj.object.normal_at(p_hit);
-                let p_hit = p_hit + n * 1E-7; //FIXME: add smaller epsilon than 1.0
-                let r = v.reflect_at(&n);
+                let p_hit = p_hit + n * 1E-7;
+                //let r = v.reflect_at(&n);
 
-                let mut num_hits = 0;
-                for _ in 0..1000 {
-                    let d = n.get_cosine_distributed_random_ray(&mut rng);
-                    if let Some(_) = trace_ray( &objects, &p_hit, &d) {
-                        num_hits += 1;
-                    }
-                }
-                let f = 1.0 - (num_hits as f64) / 1000.0;
                 //push_color( &mut image_data, &Vec3::new(f, f, f));
 
-                let dot = Vec3::dot(&n, &light_dir);
-                let diffuse = match dot > 0.0 {
-                    true => dot*f,
-                    false => 0.0,
+                let diffuse = Vec3::dot(&n, &light_dir);
+                let diffuse = match diffuse > 0.0 {
+                    true => diffuse,
+                    false => 0.0
                 };
+
+                let brightness = (diffuse + ambient) * ambient_occlusion(&objects, &p_hit, &n, &mut rng, 1000, 200.0);
+                let brightness = clamp(brightness, 0.0, 1.0);
+
                 let col: &Vec3 = &obj.object.get_color();
-                let col = col * diffuse;
-                // let col = Vec3::new(1.0, 1.0, 1.0)* obj.distance * 0.001;
+                let col = col * brightness;
+                //let col = Vec3::new(1.0, 1.0, 1.0)* ambient_occlusion(&objects, &p_hit, &n, &mut rng, 1000, 200.0);
                 push_color( &mut image_data, &col);
                 //push_normal( &mut image_data, &r);
                 //}
