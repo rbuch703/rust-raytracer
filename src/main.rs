@@ -64,7 +64,7 @@ fn get_color(objects: &Vec<Box<scene_objects::Object3D>>, ray_src: &Vec3, ray_di
 
     let hit_obj = trace_ray(&objects, &ray_src, &ray_dir);
 
-    if let Some(mut obj) = hit_obj {
+    if let Some(obj) = hit_obj {
         let p_hit = ray_src + ray_dir * obj.distance;
         let n = obj.object.normal_at(p_hit);
         let p_hit = p_hit + n * 1E-7;
@@ -75,7 +75,7 @@ fn get_color(objects: &Vec<Box<scene_objects::Object3D>>, ray_src: &Vec3, ray_di
             false => 0.0
         };
 
-        let brightness = (diffuse + ambient);// * ambient_occlusion(&objects, &p_hit, &n, rng, 10, 200.0);
+        let brightness = (diffuse + ambient) * ambient_occlusion(&objects, &p_hit, &n, rng, 10, 200.0);
         let color = obj.object.get_material().color * brightness;
         let reflectance = obj.object.get_material().reflectance;
         return match reflectance > 0.0 {
@@ -101,26 +101,9 @@ fn clamp(v: f64, min: f64, max: f64) -> f64{
     v
 }
 
-fn main() {
-
-    // For reading and opening files
-    use std::path::Path;
-    use std::fs::File;
-    use std::io::BufWriter;
-    // To use encoder.set()
-    use png::HasParameters;
-
-    let path = Path::new(r"image.png");
-    let file = File::create(path).unwrap();
-    let ref mut w = BufWriter::new(file);
-
-    let mut encoder = png::Encoder::new(w, 1023, 767);
-    encoder.set(png::ColorType::RGBA).set(png::BitDepth::Eight);
-    let mut writer = encoder.write_header().unwrap();
-
-    let mut image_data: Vec<u8> = Vec::new();
-
+fn create_scene() -> Vec<Box<scene_objects::Object3D>> {
     let mut objects: Vec<Box<scene_objects::Object3D>> = Vec::new();
+    
     objects.push(Box::new(scene_objects::Sphere::new(
         Vec3::new(-100.0, -80.0, 400.0),
         40.0,
@@ -152,6 +135,30 @@ fn main() {
         Vec3::new(0.0, -1.0, 0.0),
         scene_objects::Material::new(Vec3::new(0.1, 0.5, 0.1), 0.0),
     )));
+    
+    objects
+}
+
+fn main() {
+
+    // For reading and opening files
+    use std::path::Path;
+    use std::fs::File;
+    use std::io::BufWriter;
+    // To use encoder.set()
+    use png::HasParameters;
+
+    let path = Path::new(r"image.png");
+    let file = File::create(path).unwrap();
+    let ref mut w = BufWriter::new(file);
+
+    let mut encoder = png::Encoder::new(w, 1023, 767);
+    encoder.set(png::ColorType::RGBA).set(png::BitDepth::Eight);
+    let mut writer = encoder.write_header().unwrap();
+
+    let mut image_data: Vec<u8> = Vec::new();
+
+    let objects = create_scene();
     let mut rng = rand::XorShiftRng::new_unseeded();
 
     let ray_src = Vec3::new(0.0, 0.0, 0.0);
