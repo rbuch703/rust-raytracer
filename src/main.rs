@@ -34,12 +34,12 @@ fn ambient_occlusion(objects: &Vec<Box<scene_objects::Object3D>>, pos: &Vec3, no
 
 fn trace_ray<'a>(objects: &'a Vec<Box<scene_objects::Object3D>>, ray_src: &Vec3, ray_dir: &Vec3) -> Option<scene_objects::HitRecord<'a>>
 {
-    //println!("tracing ray from {} with {}", ray_src, ray_dir);
+//    println!("tracing ray from {} with {}", ray_src, ray_dir);
     let mut hit_obj: Option<scene_objects::HitRecord> = None;
 
     for obj in objects.iter() {
         if let Some(hit) = obj.hit(&ray_src, &ray_dir) {
-            //println!("Hit obj {} at {}", hit.object.get_color(), (ray_src + ray_dir*hit.distance));
+            //println!("\tHit obj {} at {}", hit.object.get_material().color, (ray_src + ray_dir*hit.distance));
             if let Some(old_hit) = hit_obj {
                 if hit.distance < old_hit.distance {
                     hit_obj = Some(hit);
@@ -54,6 +54,40 @@ fn trace_ray<'a>(objects: &'a Vec<Box<scene_objects::Object3D>>, ray_src: &Vec3,
 
     hit_obj
 }
+
+fn get_color(objects: &Vec<Box<scene_objects::Object3D>>, ray_src: &Vec3, ray_dir: &Vec3, light_dir: &Vec3, rng: &mut rand::Rng, recursion_depth: u32 ) -> Vec3 {
+    if recursion_depth > 5 {
+        return Vec3::new(0.5, 0.5, 0.5);
+    }
+
+    let ambient = 0.1;
+
+    let hit_obj = trace_ray(&objects, &ray_src, &ray_dir);
+
+    if let Some(mut obj) = hit_obj {
+        let p_hit = ray_src + ray_dir * obj.distance;
+        let n = obj.object.normal_at(p_hit);
+        let p_hit = p_hit + n * 1E-7;
+
+        let diffuse = Vec3::dot(&n, &light_dir);
+        let diffuse = match diffuse > 0.0 {
+            true => diffuse,
+            false => 0.0
+        };
+
+        let brightness = (diffuse + ambient);// * ambient_occlusion(&objects, &p_hit, &n, rng, 10, 200.0);
+        let color = obj.object.get_material().color * brightness;
+        let reflectance = obj.object.get_material().reflectance;
+        return match reflectance > 0.0 {
+            true => color * (1.0-reflectance) + get_color(objects, &p_hit, &ray_dir.reflect_at(&n), light_dir, rng, recursion_depth+1)* reflectance,
+            false => color
+        }
+    } else
+    {
+        return Vec3::new(0.0, 0.3, 0.8);
+    }
+}
+
 
 fn clamp(v: f64, min: f64, max: f64) -> f64{
     if v < min {
@@ -90,76 +124,56 @@ fn main() {
     objects.push(Box::new(scene_objects::Sphere::new(
         Vec3::new(-100.0, -80.0, 400.0),
         40.0,
-        Vec3::new(0.8, 0.8, 0.8),
+        scene_objects::Material::new(Vec3::new(0.8, 0.8, 0.8), 0.0),
     )));
     objects.push(Box::new(scene_objects::Sphere::new(
         Vec3::new(100.0, -80.0, 400.0),
         40.0,
-        Vec3::new(0.8, 0.8, 0.8),
+        scene_objects::Material::new(Vec3::new(0.8, 0.8, 0.8), 0.0),
     )));
     objects.push(Box::new(scene_objects::Sphere::new(
-        Vec3::new(0.0, 0.0, 700.0),
+        Vec3::new(0.0, 50.0, 700.0),
         350.0,
-        Vec3::new(0.8, 0.8, 0.0),
+        scene_objects::Material::new(Vec3::new(0.8, 0.8, 0.0), 0.1),
     )));
     objects.push(Box::new(scene_objects::Sphere::new(
         Vec3::new(100.0, -80.0, 370.0),
         20.0,
-        Vec3::new(0.1, 0.1, 0.1),
+        scene_objects::Material::new(Vec3::new(0.1, 0.1, 0.1), 0.0),
     )));
     objects.push(Box::new(scene_objects::Sphere::new(
         Vec3::new(-100.0, -80.0, 370.0),
         20.0,
-        Vec3::new(0.1, 0.1, 0.1),
+        scene_objects::Material::new(Vec3::new(0.1, 0.1, 0.1), 0.0),
     )));
 
     objects.push(Box::new(scene_objects::Plane::new(
         Vec3::new(0.0, 200.0, 0.0),
         Vec3::new(0.0, -1.0, 0.0),
-        Vec3::new(0.1, 0.5, 0.1),
+        scene_objects::Material::new(Vec3::new(0.1, 0.5, 0.1), 0.0),
     )));
     let mut rng = rand::XorShiftRng::new_unseeded();
-    let ambient = 0.3;
 
     let ray_src = Vec3::new(0.0, 0.0, 0.0);
     let light_dir = Vec3::new(-1.0, -1.0, -1.0).normalized();
 
     for y in -383i16..384 {
         for x in -511i16..512 {
-//    let y = -283;
+//    let y = 100;
 //    let x = 0;
 //    {{
             let v = Vec3::new(x as f64, y as f64, 512.0).normalized();
-            let mut hit_obj = trace_ray(&objects, &ray_src, &v);
 
-            if let Some(mut obj) = hit_obj {
-                let p_hit = &ray_src + &v * obj.distance;
-                let n = obj.object.normal_at(p_hit);
-                let p_hit = p_hit + n * 1E-7;
-                //let r = v.reflect_at(&n);
+            let col = get_color( &objects, &ray_src, &v, &light_dir, &mut rng, 0);
+            let col = Vec3::new(
+                clamp(col.x, 0.0, 1.0).sqrt(),
+                clamp(col.y, 0.0, 1.0).sqrt(),
+                clamp(col.z, 0.0, 1.0).sqrt(),
+            );
+            //let col = Vec3::new(1.0, 1.0, 1.0)* ambient_occlusion(&objects, &p_hit, &n, &mut rng, 1000, 200.0);
+            push_color( &mut image_data, &col);
 
-                //push_color( &mut image_data, &Vec3::new(f, f, f));
-
-                let diffuse = Vec3::dot(&n, &light_dir);
-                let diffuse = match diffuse > 0.0 {
-                    true => diffuse,
-                    false => 0.0
-                };
-
-                let brightness = (diffuse + ambient) * ambient_occlusion(&objects, &p_hit, &n, &mut rng, 1000, 200.0);
-                let brightness = clamp(brightness, 0.0, 1.0);
-
-                let col: &Vec3 = &obj.object.get_color();
-                let col = col * brightness;
-                //let col = Vec3::new(1.0, 1.0, 1.0)* ambient_occlusion(&objects, &p_hit, &n, &mut rng, 1000, 200.0);
-                push_color( &mut image_data, &col);
-                //push_normal( &mut image_data, &r);
-                //}
-
-            } else {
-                push_normal(&mut image_data, &v);
-            }
-        }
+    }
     }
     writer.write_image_data(&image_data).unwrap(); // Save
 }

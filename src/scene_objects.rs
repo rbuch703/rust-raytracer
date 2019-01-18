@@ -2,10 +2,34 @@
 //mod math3d;
 use super::math3d::Vec3;
 
+
+pub struct Material {
+    pub color: Vec3,
+    pub reflectance: f64,
+}
+
+impl Material {
+    pub fn new(color: Vec3, reflectance: f64) -> Material {
+        Material{color, reflectance}
+    }
+    pub fn rand(rng: &mut rand::Rng) -> Material {
+        Material{
+            color: Vec3::new(rng.next_f64(), rng.next_f64(), rng.next_f64()),
+            reflectance: rng.next_f64()
+        }
+    }
+}
+
 pub trait Object3D {
     fn hit(&self, ray_src: &Vec3, ray_dir: &Vec3) -> Option<HitRecord>;
     fn normal_at(&self, pt: Vec3) -> Vec3;
-    fn get_color(&self) -> &Vec3;
+    fn get_material(&self) -> &Material;
+}
+
+impl Object3D {
+    fn get_color(&self) -> Vec3 {
+        self.get_material().color
+    }
 }
 
 pub struct HitRecord<'a> {
@@ -16,21 +40,21 @@ pub struct HitRecord<'a> {
 pub struct Sphere {
     center: Vec3,
     radius: f64,
-    color: Vec3,
+    material: Material,
 }
 
 pub struct Plane {
     point: Vec3,
     normal: Vec3,
-    color: Vec3,
+    material: Material,
 }
 
 impl Sphere {
-    pub fn new(center: Vec3, radius: f64, color: Vec3) -> Sphere {
+    pub fn new(center: Vec3, radius: f64, material: Material) -> Sphere {
         Sphere {
             center,
             radius,
-            color,
+            material,
         }
     }
 }
@@ -68,18 +92,18 @@ impl Object3D for Sphere {
         (&pt - &self.center).normalized()
     }
 
-    fn get_color(&self) -> &Vec3 {
-        &self.color
+    fn get_material(&self) -> &Material {
+        &self.material
     }
 }
 
 
 impl Plane {
-    pub fn new(point: Vec3, normal: Vec3, color: Vec3) -> Plane {
+    pub fn new(point: Vec3, normal: Vec3, material: Material) -> Plane {
         Plane {
             point,
             normal,
-            color,
+            material,
         }
     }
 }
@@ -105,7 +129,7 @@ impl Object3D for Plane {
         self.normal
     }
 
-    fn get_color(&self) -> &Vec3 {
-        &self.color
+    fn get_material(&self) -> &Material {
+        &self.material
     }
 }
