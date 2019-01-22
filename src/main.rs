@@ -74,10 +74,15 @@ fn get_color(objects: &Vec<Box<scene_objects::Object3D>>, ray_src: &Vec3, ray_di
             true => diffuse,
             false => 0.0
         };
+        
+        let material = &obj.object.get_material();
+        let light_color = Vec3::new(1.0, 0.7, 0.8);
+        let r = ray_dir.reflect_at(&n);
+        let specular = clamp(Vec3::dot(&r, &light_dir), 0.0, 1.0).powf(material.specular_exponent) * material.specular_strength;
 
         let brightness = (diffuse + ambient) * ambient_occlusion(&objects, &p_hit, &n, rng, 10, 200.0);
-        let color = obj.object.get_material().color * brightness;
-        let reflectance = obj.object.get_material().reflectance;
+        let color = material.color * brightness + light_color * specular;
+        let reflectance = material.reflectance;
         return match reflectance > 0.0 {
             true => color * (1.0-reflectance) + get_color(objects, &p_hit, &ray_dir.reflect_at(&n), light_dir, rng, recursion_depth+1)* reflectance,
             false => color
@@ -103,38 +108,50 @@ fn clamp(v: f64, min: f64, max: f64) -> f64{
 
 fn create_scene() -> Vec<Box<scene_objects::Object3D>> {
     let mut objects: Vec<Box<scene_objects::Object3D>> = Vec::new();
-    
+
     objects.push(Box::new(scene_objects::Sphere::new(
         Vec3::new(-100.0, -80.0, 400.0),
         40.0,
-        scene_objects::Material::new(Vec3::new(0.8, 0.8, 0.8), 0.0),
+        scene_objects::Material::new_diffuse(Vec3::new(0.8, 0.8, 0.8)),
     )));
     objects.push(Box::new(scene_objects::Sphere::new(
         Vec3::new(100.0, -80.0, 400.0),
         40.0,
-        scene_objects::Material::new(Vec3::new(0.8, 0.8, 0.8), 0.0),
+        scene_objects::Material::new_diffuse(Vec3::new(0.8, 0.8, 0.8)),
     )));
-    objects.push(Box::new(scene_objects::Sphere::new(
+/*    objects.push(Box::new(scene_objects::Sphere::new(
         Vec3::new(0.0, 50.0, 700.0),
         350.0,
-        scene_objects::Material::new(Vec3::new(0.8, 0.8, 0.0), 0.1),
-    )));
+        scene_objects::Material::new(Vec3::new(0.8, 0.8, 0.0), 0.1, 1.0, 10.0),
+    )));*/
     objects.push(Box::new(scene_objects::Sphere::new(
         Vec3::new(100.0, -80.0, 370.0),
         20.0,
-        scene_objects::Material::new(Vec3::new(0.1, 0.1, 0.1), 0.0),
+        scene_objects::Material::new(Vec3::new(0.1, 0.1, 0.1), 0.0, 1.0, 20.0),
     )));
     objects.push(Box::new(scene_objects::Sphere::new(
         Vec3::new(-100.0, -80.0, 370.0),
         20.0,
-        scene_objects::Material::new(Vec3::new(0.1, 0.1, 0.1), 0.0),
+        scene_objects::Material::new(Vec3::new(0.1, 0.1, 0.1), 0.0, 1.0, 20.0),
     )));
-
+/*
     objects.push(Box::new(scene_objects::Plane::new(
         Vec3::new(0.0, 200.0, 0.0),
         Vec3::new(0.0, -1.0, 0.0),
-        scene_objects::Material::new(Vec3::new(0.1, 0.5, 0.1), 0.0),
-    )));
+        scene_objects::Material::new_diffuse(Vec3::new(0.1, 0.5, 0.1)),
+    )));*/
+
+    use rand::Rng;
+    let mut rng = rand::XorShiftRng::new_unseeded();
+    
+    for _i in 0..1000 {
+        objects.push(Box::new(scene_objects::Sphere::new(
+            Vec3::new( (rng.next_f64()-0.5) * 2000.0, (rng.next_f64()-0.5) * 2000.0, rng.next_f64() * 4000.0),
+            100.0,
+            scene_objects::Material::new( Vec3::new(0.5 + 0.5*rng.next_f64(), 0.5 + 0.5*rng.next_f64(), 0.5+0.5*rng.next_f64()), 0.3, 1.0, 50.0),
+        )));
+    
+    }
     
     objects
 }
@@ -147,14 +164,6 @@ fn main() {
     use std::io::BufWriter;
     // To use encoder.set()
     use png::HasParameters;
-
-    let path = Path::new(r"image.png");
-    let file = File::create(path).unwrap();
-    let ref mut w = BufWriter::new(file);
-
-    let mut encoder = png::Encoder::new(w, 1023, 767);
-    encoder.set(png::ColorType::RGBA).set(png::BitDepth::Eight);
-    let mut writer = encoder.write_header().unwrap();
 
     let mut image_data: Vec<u8> = Vec::new();
 
@@ -171,16 +180,33 @@ fn main() {
 //    {{
             let v = Vec3::new(x as f64, y as f64, 512.0).normalized();
 
-            let col = get_color( &objects, &ray_src, &v, &light_dir, &mut rng, 0);
+            if let Some(hit) = trace_ray(&objects, &ray_src, &v) {
+                let p_hit = ray_src + v * hit.distance;
+                let n = hit.object.normal_at(p_hit);
+                let p_hit = p_hit + n * 1E-7;
+                push_color(&mut image_data, &(Vec3::new(1.0, 1.0, 1.0)* ambient_occlusion(&objects, &p_hit, &n, &mut rng, 1000, 200.0)));
+            } else {
+                push_color(&mut image_data, &Vec3::new(0.0, 0.3, 0.8));
+            
+            }
+
+            /*let col = get_color( &objects, &ray_src, &v, &light_dir, &mut rng, 0);
             let col = Vec3::new(
                 clamp(col.x, 0.0, 1.0).sqrt(),
                 clamp(col.y, 0.0, 1.0).sqrt(),
                 clamp(col.z, 0.0, 1.0).sqrt(),
             );
-            //let col = Vec3::new(1.0, 1.0, 1.0)* ambient_occlusion(&objects, &p_hit, &n, &mut rng, 1000, 200.0);
-            push_color( &mut image_data, &col);
+            push_color( &mut image_data, &col);*/
 
     }
     }
+
+    let path = Path::new(r"image.png");
+    let file = File::create(path).unwrap();
+    let ref mut w = BufWriter::new(file);
+
+    let mut encoder = png::Encoder::new(w, 1023, 767);
+    encoder.set(png::ColorType::RGBA).set(png::BitDepth::Eight);
+    let mut writer = encoder.write_header().unwrap();
     writer.write_image_data(&image_data).unwrap(); // Save
 }

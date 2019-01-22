@@ -40,6 +40,14 @@ impl<'a> ops::Add<Vec3> for &'a Vec3 {
     }
 }
 
+impl<'a> ops::Neg for &'a Vec3 {
+    type Output = Vec3;
+
+    fn neg(self) -> Vec3 {
+        Vec3::new( - self.x, - self.y, - self.z)
+    }
+}
+
 
 impl ops::Sub<Vec3> for Vec3 {
     type Output = Vec3;
@@ -138,3 +146,16 @@ impl Vec3 {
         udir * u + vdir * v + self * n
     }
 }
+    
+struct BoundingBox {
+    min: Vec3,
+    max: Vec3 
+}
+
+impl BoundingBox {
+    fn new(min: Vec3, max: Vec3) -> BoundingBox {
+        BoundingBox{min, max}
+    }
+
+}
+

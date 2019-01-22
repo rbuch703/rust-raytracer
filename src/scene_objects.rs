@@ -6,16 +6,25 @@ use super::math3d::Vec3;
 pub struct Material {
     pub color: Vec3,
     pub reflectance: f64,
+    pub specular_strength: f64,
+    pub specular_exponent: f64
 }
 
 impl Material {
-    pub fn new(color: Vec3, reflectance: f64) -> Material {
-        Material{color, reflectance}
+    pub fn new(color: Vec3, reflectance: f64, specular_strength: f64, specular_exponent: f64) -> Material {
+        Material{color, reflectance, specular_strength, specular_exponent}
     }
+
+    pub fn new_diffuse(color: Vec3) -> Material {
+        Material{color, reflectance:0.0, specular_strength:0.0, specular_exponent:0.0}
+    }
+
     pub fn rand(rng: &mut rand::Rng) -> Material {
         Material{
             color: Vec3::new(rng.next_f64(), rng.next_f64(), rng.next_f64()),
-            reflectance: rng.next_f64()
+            reflectance: rng.next_f64(),
+            specular_strength: rng.next_f64(),
+            specular_exponent: rng.next_f64()*10.0
         }
     }
 }
