@@ -147,13 +147,13 @@ impl Vec3 {
     }
 }
     
-struct BoundingBox {
+pub struct BoundingBox {
     min: Vec3,
     max: Vec3 
 }
 
 impl BoundingBox {
-    fn new(min: Vec3, max: Vec3) -> BoundingBox {
+    pub fn new(min: Vec3, max: Vec3) -> BoundingBox {
         BoundingBox{min, max}
     }
 

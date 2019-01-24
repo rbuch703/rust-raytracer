@@ -40,11 +40,9 @@ fn trace_ray<'a>(objects: &'a Vec<Box<scene_objects::Object3D>>, ray_src: &Vec3,
     for obj in objects.iter() {
         if let Some(hit) = obj.hit(&ray_src, &ray_dir) {
             //println!("\tHit obj {} at {}", hit.object.get_material().color, (ray_src + ray_dir*hit.distance));
-            if let Some(old_hit) = hit_obj {
-                if hit.distance < old_hit.distance {
-                    hit_obj = Some(hit);
-                } else {
-                    hit_obj = Some(old_hit);
+            if let Some(ref mut best_hit) = hit_obj {
+                if hit.distance < best_hit.distance {
+                    *best_hit = hit;
                 }
             } else {
                 hit_obj = Some(hit)

@@ -1,7 +1,7 @@
 
 //mod math3d;
 use super::math3d::Vec3;
-
+use super::math3d::BoundingBox;
 
 pub struct Material {
     pub color: Vec3,
@@ -33,6 +33,7 @@ pub trait Object3D {
     fn hit(&self, ray_src: &Vec3, ray_dir: &Vec3) -> Option<HitRecord>;
     fn normal_at(&self, pt: Vec3) -> Vec3;
     fn get_material(&self) -> &Material;
+    fn get_bounds(&self) -> Option<BoundingBox>;
 }
 
 impl Object3D {
@@ -104,6 +105,11 @@ impl Object3D for Sphere {
     fn get_material(&self) -> &Material {
         &self.material
     }
+    
+    fn get_bounds(&self) -> Option<BoundingBox> {
+        return Some(BoundingBox::new( self.center - Vec3::new(1.0, 1.0, 1.0) * self.radius,
+                                      self.center + Vec3::new(1.0, 1.0, 1.0) * self.radius));
+    }
 }
 
 
@@ -141,4 +147,10 @@ impl Object3D for Plane {
     fn get_material(&self) -> &Material {
         &self.material
     }
+    
+    fn get_bounds(&self) -> Option<BoundingBox> {
+        // a plane is unbounded
+        return None;
+    }
+    
 }
