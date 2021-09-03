@@ -19,7 +19,7 @@ impl Material {
         Material{color, reflectance:0.0, specular_strength:0.0, specular_exponent:0.0}
     }
 
-    pub fn rand(rng: &mut rand::Rng) -> Material {
+    pub fn rand(rng: &mut dyn rand::Rng) -> Material {
         Material{
             color: Vec3::new(rng.next_f64(), rng.next_f64(), rng.next_f64()),
             reflectance: rng.next_f64(),
@@ -36,7 +36,7 @@ pub trait Object3D {
     fn get_bounds(&self) -> Option<BoundingBox>;
 }
 
-impl Object3D {
+impl dyn Object3D {
     fn get_color(&self) -> Vec3 {
         self.get_material().color
     }
@@ -44,7 +44,7 @@ impl Object3D {
 
 pub struct HitRecord<'a> {
     pub distance: f64,
-    pub object: &'a Object3D,
+    pub object: &'a dyn Object3D,
 }
 
 pub struct Sphere {

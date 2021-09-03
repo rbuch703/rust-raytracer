@@ -1,4 +1,3 @@
-
 extern crate png;
 extern crate rand;
 
@@ -6,19 +5,19 @@ mod math3d;
 mod scene_objects;
 use math3d::Vec3;
 
-fn push_normal( image_data: &mut Vec<u8>, n:&Vec3) {
+fn set_normal( pixel: &mut [u8], n:&Vec3) {
     let normalized = (n + Vec3::new(1.0, 1.0, 1.0))* 0.5;
-    push_color( image_data, &normalized);
+    set_color( pixel, &normalized);
 }
 
-fn push_color( image_data: &mut Vec<u8>, col:&Vec3) {
-    image_data.push( ( col.x * 255.0) as u8);
-    image_data.push( ( col.y * 255.0) as u8);
-    image_data.push( ( col.z * 255.0) as u8);
-    image_data.push( 255 );
+fn set_color( pixel: &mut [u8], col:&Vec3) {
+    pixel[0] = ( col.x * 255.0) as u8;
+    pixel[1] = ( col.y * 255.0) as u8;
+    pixel[2] = ( col.z * 255.0) as u8;
+    pixel[3] = 255;
 }
 
-fn ambient_occlusion(objects: &Vec<Box<scene_objects::Object3D>>, pos: &Vec3, normal: &Vec3, rng: &mut rand::Rng, num_samples: u32, distance_cutoff: f64) -> f64 {
+fn ambient_occlusion(objects: &Vec<Box<dyn scene_objects::Object3D>>, pos: &Vec3, normal: &Vec3, rng: &mut dyn rand::Rng, num_samples: u32, distance_cutoff: f64) -> f64 {
     let mut num_hits = 0;
     for _ in 0..num_samples {
         let d = normal.get_cosine_distributed_random_ray(rng);
@@ -32,7 +31,7 @@ fn ambient_occlusion(objects: &Vec<Box<scene_objects::Object3D>>, pos: &Vec3, no
     1.0 - (num_hits as f64) / (num_samples as f64)
 }
 
-fn trace_ray<'a>(objects: &'a Vec<Box<scene_objects::Object3D>>, ray_src: &Vec3, ray_dir: &Vec3) -> Option<scene_objects::HitRecord<'a>>
+fn trace_ray<'a>(objects: &'a Vec<Box<dyn scene_objects::Object3D>>, ray_src: &Vec3, ray_dir: &Vec3) -> Option<scene_objects::HitRecord<'a>>
 {
 //    println!("tracing ray from {} with {}", ray_src, ray_dir);
     let mut hit_obj: Option<scene_objects::HitRecord> = None;
@@ -53,7 +52,7 @@ fn trace_ray<'a>(objects: &'a Vec<Box<scene_objects::Object3D>>, ray_src: &Vec3,
     hit_obj
 }
 
-fn get_color(objects: &Vec<Box<scene_objects::Object3D>>, ray_src: &Vec3, ray_dir: &Vec3, light_dir: &Vec3, rng: &mut rand::Rng, recursion_depth: u32 ) -> Vec3 {
+fn get_color(objects: &Vec<Box<dyn scene_objects::Object3D>>, ray_src: &Vec3, ray_dir: &Vec3, light_dir: &Vec3, rng: &mut dyn rand::Rng, recursion_depth: u32 ) -> Vec3 {
     if recursion_depth > 5 {
         return Vec3::new(0.5, 0.5, 0.5);
     }
@@ -78,7 +77,7 @@ fn get_color(objects: &Vec<Box<scene_objects::Object3D>>, ray_src: &Vec3, ray_di
         let r = ray_dir.reflect_at(&n);
         let specular = clamp(Vec3::dot(&r, &light_dir), 0.0, 1.0).powf(material.specular_exponent) * material.specular_strength;
 
-        let brightness = (diffuse + ambient) * ambient_occlusion(&objects, &p_hit, &n, rng, 10, 200.0);
+        let brightness = (diffuse + ambient) * ambient_occlusion(&objects, &p_hit, &n, rng, 100, 200.0);
         let color = material.color * brightness + light_color * specular;
         let reflectance = material.reflectance;
         return match reflectance > 0.0 {
@@ -104,8 +103,8 @@ fn clamp(v: f64, min: f64, max: f64) -> f64{
     v
 }
 
-fn create_scene() -> Vec<Box<scene_objects::Object3D>> {
-    let mut objects: Vec<Box<scene_objects::Object3D>> = Vec::new();
+fn create_scene() -> Vec<Box<dyn scene_objects::Object3D>> {
+    let mut objects: Vec<Box<dyn scene_objects::Object3D>> = Vec::new();
 
     objects.push(Box::new(scene_objects::Sphere::new(
         Vec3::new(-100.0, -80.0, 400.0),
@@ -142,7 +141,7 @@ fn create_scene() -> Vec<Box<scene_objects::Object3D>> {
     use rand::Rng;
     let mut rng = rand::XorShiftRng::new_unseeded();
     
-    for _i in 0..1000 {
+    for _i in 0..100 {
         objects.push(Box::new(scene_objects::Sphere::new(
             Vec3::new( (rng.next_f64()-0.5) * 2000.0, (rng.next_f64()-0.5) * 2000.0, rng.next_f64() * 4000.0),
             100.0,
@@ -163,7 +162,7 @@ fn main() {
     // To use encoder.set()
     use png::HasParameters;
 
-    let mut image_data: Vec<u8> = Vec::new();
+    let mut image_data: Vec<u8> = vec![0; 767*1023*4];
 
     let objects = create_scene();
     let mut rng = rand::XorShiftRng::new_unseeded();
@@ -171,21 +170,22 @@ fn main() {
     let ray_src = Vec3::new(0.0, 0.0, 0.0);
     let light_dir = Vec3::new(-1.0, -1.0, -1.0).normalized();
 
-    for y in -383i16..384 {
-        for x in -511i16..512 {
-//    let y = 100;
-//    let x = 0;
-//    {{
-            let v = Vec3::new(x as f64, y as f64, 512.0).normalized();
+    let mut rows : Vec<&mut [u8]> = image_data.chunks_mut(1023*4).collect();
+
+    for y in 0i16..767 {
+        println!("Tracing line {}", y);
+        let mut row : &mut [u8] = rows[y as usize];
+        for x in 0i16..1023 {
+
+            let v = Vec3::new( (x-511) as f64, (y-383) as f64, 512.0).normalized();
 
             if let Some(hit) = trace_ray(&objects, &ray_src, &v) {
                 let p_hit = ray_src + v * hit.distance;
                 let n = hit.object.normal_at(p_hit);
                 let p_hit = p_hit + n * 1E-7;
-                push_color(&mut image_data, &(Vec3::new(1.0, 1.0, 1.0)* ambient_occlusion(&objects, &p_hit, &n, &mut rng, 1000, 200.0)));
+                set_color( &mut row[(x*4) as usize..], &(Vec3::new(1.0, 1.0, 1.0)* ambient_occlusion(&objects, &p_hit, &n, &mut rng, 100, 200.0)));
             } else {
-                push_color(&mut image_data, &Vec3::new(0.0, 0.3, 0.8));
-            
+                set_color( &mut row[(x*4) as usize..], &Vec3::new(0.0, 0.3, 0.8));
             }
 
             /*let col = get_color( &objects, &ray_src, &v, &light_dir, &mut rng, 0);
@@ -194,7 +194,7 @@ fn main() {
                 clamp(col.y, 0.0, 1.0).sqrt(),
                 clamp(col.z, 0.0, 1.0).sqrt(),
             );
-            push_color( &mut image_data, &col);*/
+            set_color( &mut row[(x*4) as usize..], &col);*/
 
     }
     }
