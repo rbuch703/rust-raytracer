@@ -192,6 +192,10 @@ fn trace_line(row: &mut[u8], row_idx: i16, objects: &Vec<Box<SceneObject>>) {
  
 }
 
+fn take_one<'a>(tasks: &'a std::sync::Arc::<std::sync::Mutex::<&mut std::collections::LinkedList::<(usize, &mut [u8])>>>) -> Option<(usize, &'a mut [u8])>
+{
+    tasks.lock().unwrap().pop_front()
+}
 
 fn main() {
 
@@ -216,15 +220,8 @@ fn main() {
             let shared_tasks_clone = std::sync::Arc::clone(&shared_tasks);
 
             scope.spawn(move|_|{
-                loop {
-                    let task = shared_tasks_clone.lock().unwrap().pop_front();
-                    if let Some((idx, row)) = task
-                    {
-                        trace_line(row, idx as i16, &objects_clone)
-                    } else
-                    {
-                        break;
-                    }
+                while let Some((idx, row)) = take_one(&shared_tasks_clone) {
+                   trace_line(row, idx as i16, &objects_clone)
                 }
             });
         }
