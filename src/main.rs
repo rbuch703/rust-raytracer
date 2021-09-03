@@ -1,9 +1,13 @@
 extern crate png;
 extern crate rand;
+extern crate crossbeam;
+extern crate num_cpus;
 
 mod math3d;
 mod scene_objects;
 use math3d::Vec3;
+
+type SceneObject = dyn scene_objects::Object3D+Sync+Send;
 
 fn set_normal( pixel: &mut [u8], n:&Vec3) {
     let normalized = (n + Vec3::new(1.0, 1.0, 1.0))* 0.5;
@@ -17,7 +21,7 @@ fn set_color( pixel: &mut [u8], col:&Vec3) {
     pixel[3] = 255;
 }
 
-fn ambient_occlusion(objects: &Vec<Box<dyn scene_objects::Object3D>>, pos: &Vec3, normal: &Vec3, rng: &mut dyn rand::Rng, num_samples: u32, distance_cutoff: f64) -> f64 {
+fn ambient_occlusion(objects: &Vec<Box<SceneObject>>, pos: &Vec3, normal: &Vec3, rng: &mut dyn rand::Rng, num_samples: u32, distance_cutoff: f64) -> f64 {
     let mut num_hits = 0;
     for _ in 0..num_samples {
         let d = normal.get_cosine_distributed_random_ray(rng);
@@ -31,7 +35,7 @@ fn ambient_occlusion(objects: &Vec<Box<dyn scene_objects::Object3D>>, pos: &Vec3
     1.0 - (num_hits as f64) / (num_samples as f64)
 }
 
-fn trace_ray<'a>(objects: &'a Vec<Box<dyn scene_objects::Object3D>>, ray_src: &Vec3, ray_dir: &Vec3) -> Option<scene_objects::HitRecord<'a>>
+fn trace_ray<'a>(objects: &'a Vec<Box<SceneObject>>, ray_src: &Vec3, ray_dir: &Vec3) -> Option<scene_objects::HitRecord<'a>>
 {
 //    println!("tracing ray from {} with {}", ray_src, ray_dir);
     let mut hit_obj: Option<scene_objects::HitRecord> = None;
@@ -52,7 +56,7 @@ fn trace_ray<'a>(objects: &'a Vec<Box<dyn scene_objects::Object3D>>, ray_src: &V
     hit_obj
 }
 
-fn get_color(objects: &Vec<Box<dyn scene_objects::Object3D>>, ray_src: &Vec3, ray_dir: &Vec3, light_dir: &Vec3, rng: &mut dyn rand::Rng, recursion_depth: u32 ) -> Vec3 {
+fn get_color(objects: &Vec<Box<SceneObject>>, ray_src: &Vec3, ray_dir: &Vec3, light_dir: &Vec3, rng: &mut dyn rand::Rng, recursion_depth: u32 ) -> Vec3 {
     if recursion_depth > 5 {
         return Vec3::new(0.5, 0.5, 0.5);
     }
@@ -103,8 +107,8 @@ fn clamp(v: f64, min: f64, max: f64) -> f64{
     v
 }
 
-fn create_scene() -> Vec<Box<dyn scene_objects::Object3D>> {
-    let mut objects: Vec<Box<dyn scene_objects::Object3D>> = Vec::new();
+fn create_scene() -> Vec<Box<SceneObject>> {
+    let mut objects: Vec<Box<SceneObject>> = Vec::new();
 
     objects.push(Box::new(scene_objects::Sphere::new(
         Vec3::new(-100.0, -80.0, 400.0),
@@ -153,6 +157,42 @@ fn create_scene() -> Vec<Box<dyn scene_objects::Object3D>> {
     objects
 }
 
+fn trace_line(row: &mut[u8], row_idx: i16, objects: &Vec<Box<SceneObject>>) {
+    println!("Tracing line {}", row_idx);
+    let ray_src = Vec3::new(0.0, 0.0, 0.0);
+    let light_dir = Vec3::new(-1.0, -1.0, -1.0).normalized();
+
+    use rand::SeedableRng;
+    let mut rng = rand::XorShiftRng::from_seed([0,0,0,(row_idx+1) as u32]);
+
+    let readable_objects = &*objects;
+
+    for x in 0i16..1023 {
+
+        let v = Vec3::new( (x-511) as f64, (row_idx-383) as f64, 512.0).normalized();
+        /*
+        if let Some(hit) = trace_ray(&readable_objects, &ray_src, &v) {
+            let p_hit = ray_src + v * hit.distance;
+            let n = hit.object.normal_at(p_hit);
+            let p_hit = p_hit + n * 1E-7;
+            set_color( &mut row[(x*4) as usize..], &(Vec3::new(1.0, 1.0, 1.0)* ambient_occlusion(&readable_objects, &p_hit, &n, &mut rng, 1000, 200.0)));
+        } else {
+            set_color( &mut row[(x*4) as usize..], &Vec3::new(0.0, 0.3, 0.8));
+        }*/
+
+        let col = get_color( &objects, &ray_src, &v, &light_dir, &mut rng, 0);
+        let col = Vec3::new(
+            clamp(col.x, 0.0, 1.0).sqrt(),
+            clamp(col.y, 0.0, 1.0).sqrt(),
+            clamp(col.z, 0.0, 1.0).sqrt(),
+        );
+        set_color( &mut row[(x*4) as usize..], &col);
+
+}
+ 
+}
+
+
 fn main() {
 
     // For reading and opening files
@@ -162,42 +202,33 @@ fn main() {
     // To use encoder.set()
     use png::HasParameters;
 
+    let objects = std::sync::Arc::new(create_scene());
+
     let mut image_data: Vec<u8> = vec![0; 767*1023*4];
+    let mut tasks : std::collections::LinkedList::<(usize, &mut [u8])> = image_data.chunks_mut(1023*4).enumerate().collect();
+    let mut shared_tasks = std::sync::Arc::new(std::sync::Mutex::new(&mut tasks));
+    
+    let _ = crossbeam::scope(|scope| {
+        // create as many worker threads as we have CPU cores
+        for i in 1..=num_cpus::get()
+        {
+            let objects_clone = std::sync::Arc::clone(&objects);
+            let shared_tasks_clone = std::sync::Arc::clone(&shared_tasks);
 
-    let objects = create_scene();
-    let mut rng = rand::XorShiftRng::new_unseeded();
-
-    let ray_src = Vec3::new(0.0, 0.0, 0.0);
-    let light_dir = Vec3::new(-1.0, -1.0, -1.0).normalized();
-
-    let mut rows : Vec<&mut [u8]> = image_data.chunks_mut(1023*4).collect();
-
-    for y in 0i16..767 {
-        println!("Tracing line {}", y);
-        let mut row : &mut [u8] = rows[y as usize];
-        for x in 0i16..1023 {
-
-            let v = Vec3::new( (x-511) as f64, (y-383) as f64, 512.0).normalized();
-
-            if let Some(hit) = trace_ray(&objects, &ray_src, &v) {
-                let p_hit = ray_src + v * hit.distance;
-                let n = hit.object.normal_at(p_hit);
-                let p_hit = p_hit + n * 1E-7;
-                set_color( &mut row[(x*4) as usize..], &(Vec3::new(1.0, 1.0, 1.0)* ambient_occlusion(&objects, &p_hit, &n, &mut rng, 100, 200.0)));
-            } else {
-                set_color( &mut row[(x*4) as usize..], &Vec3::new(0.0, 0.3, 0.8));
-            }
-
-            /*let col = get_color( &objects, &ray_src, &v, &light_dir, &mut rng, 0);
-            let col = Vec3::new(
-                clamp(col.x, 0.0, 1.0).sqrt(),
-                clamp(col.y, 0.0, 1.0).sqrt(),
-                clamp(col.z, 0.0, 1.0).sqrt(),
-            );
-            set_color( &mut row[(x*4) as usize..], &col);*/
-
-    }
-    }
+            scope.spawn(move|_|{
+                loop {
+                    let task = shared_tasks_clone.lock().unwrap().pop_front();
+                    if let Some((idx, row)) = task
+                    {
+                        trace_line(row, idx as i16, &objects_clone)
+                    } else
+                    {
+                        break;
+                    }
+                }
+            });
+        }
+    });
 
     let path = Path::new(r"image.png");
     let file = File::create(path).unwrap();

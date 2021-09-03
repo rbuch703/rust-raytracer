@@ -6,6 +6,8 @@ authors = ["rbuchhol"]
 [dependencies]
 png= ">=0.13"
 rand= ">0.4.0"
+crossbeam= ">0.7.3"
+num_cpus= ">=1.13.0"
 
 [profile.release]
 debug = true
