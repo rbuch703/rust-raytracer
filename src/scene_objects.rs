@@ -19,12 +19,13 @@ impl Material {
         Material{color, reflectance:0.0, specular_strength:0.0, specular_exponent:0.0}
     }
 
-    pub fn rand(rng: &mut dyn rand::Rng) -> Material {
+    pub fn rand(rng: &mut dyn rand::RngCore) -> Material {
+        use crate::rand::Rng;
         Material{
-            color: Vec3::new(rng.next_f64(), rng.next_f64(), rng.next_f64()),
-            reflectance: rng.next_f64(),
-            specular_strength: rng.next_f64(),
-            specular_exponent: rng.next_f64()*10.0
+            color: Vec3::new(rng.gen::<f64>(), rng.gen::<f64>(), rng.gen::<f64>()),
+            reflectance: rng.gen::<f64>(),
+            specular_strength: rng.gen::<f64>(),
+            specular_exponent: rng.gen::<f64>()*10.0
         }
     }
 }

@@ -1,6 +1,5 @@
 extern crate png;
 extern crate rand;
-extern crate crossbeam;
 extern crate num_cpus;
 
 mod math3d;
@@ -21,7 +20,7 @@ fn set_color( pixel: &mut [u8], col:&Vec3) {
     pixel[3] = 255;
 }
 
-fn ambient_occlusion(objects: &Vec<Box<SceneObject>>, pos: &Vec3, normal: &Vec3, rng: &mut dyn rand::Rng, num_samples: u32, distance_cutoff: f64) -> f64 {
+fn ambient_occlusion(objects: &Vec<Box<SceneObject>>, pos: &Vec3, normal: &Vec3, rng: &mut dyn rand::RngCore, num_samples: u32, distance_cutoff: f64) -> f64 {
     let mut num_hits = 0;
     for _ in 0..num_samples {
         let d = normal.get_cosine_distributed_random_ray(rng);
@@ -56,7 +55,7 @@ fn trace_ray<'a>(objects: &'a Vec<Box<SceneObject>>, ray_src: &Vec3, ray_dir: &V
     hit_obj
 }
 
-fn get_color(objects: &Vec<Box<SceneObject>>, ray_src: &Vec3, ray_dir: &Vec3, light_dir: &Vec3, rng: &mut dyn rand::Rng, recursion_depth: u32 ) -> Vec3 {
+fn get_color(objects: &Vec<Box<SceneObject>>, ray_src: &Vec3, ray_dir: &Vec3, light_dir: &Vec3, rng: &mut dyn rand::RngCore, recursion_depth: u32 ) -> Vec3 {
     if recursion_depth > 5 {
         return Vec3::new(0.5, 0.5, 0.5);
     }
@@ -142,14 +141,14 @@ fn create_scene() -> Vec<Box<SceneObject>> {
         scene_objects::Material::new_diffuse(Vec3::new(0.1, 0.5, 0.1)),
     )));*/
 
-    use rand::Rng;
-    let mut rng = rand::XorShiftRng::new_unseeded();
-    
+    use rand::{SeedableRng};
+    let mut rng = rand::rngs::SmallRng::from_entropy();
+    use crate::rand::Rng;
     for _i in 0..100 {
         objects.push(Box::new(scene_objects::Sphere::new(
-            Vec3::new( (rng.next_f64()-0.5) * 2000.0, (rng.next_f64()-0.5) * 2000.0, rng.next_f64() * 4000.0),
+            Vec3::new( (rng.gen::<f64>()-0.5) * 2000.0, (rng.gen::<f64>()-0.5) * 2000.0, rng.gen::<f64>() * 4000.0),
             100.0,
-            scene_objects::Material::new( Vec3::new(0.5 + 0.5*rng.next_f64(), 0.5 + 0.5*rng.next_f64(), 0.5+0.5*rng.next_f64()), 0.3, 1.0, 50.0),
+            scene_objects::Material::new( Vec3::new(0.5 + 0.5*rng.gen::<f64>(), 0.5 + 0.5*rng.gen::<f64>(), 0.5+0.5*rng.gen::<f64>()), 0.3, 1.0, 50.0),
         )));
     
     }
@@ -163,7 +162,7 @@ fn trace_line(row: &mut[u8], row_idx: i16, objects: &Vec<Box<SceneObject>>) {
     let light_dir = Vec3::new(-1.0, -1.0, -1.0).normalized();
 
     use rand::SeedableRng;
-    let mut rng = rand::XorShiftRng::from_seed([0,0,0,(row_idx+1) as u32]);
+    let mut rng = rand::rngs::SmallRng::from_entropy();
 
     let readable_objects = &*objects;
 
@@ -203,8 +202,6 @@ fn main() {
     use std::path::Path;
     use std::fs::File;
     use std::io::BufWriter;
-    // To use encoder.set()
-    use png::HasParameters;
 
     let objects = std::sync::Arc::new(create_scene());
 
@@ -212,14 +209,14 @@ fn main() {
     let mut tasks : std::collections::LinkedList::<(usize, &mut [u8])> = image_data.chunks_mut(1023*4).enumerate().collect();
     let mut shared_tasks = std::sync::Arc::new(std::sync::Mutex::new(&mut tasks));
     
-    let _ = crossbeam::scope(|scope| {
+    let _ = std::thread::scope(|scope| {
         // create as many worker threads as we have CPU cores
         for i in 1..=num_cpus::get()
         {
             let objects_clone = std::sync::Arc::clone(&objects);
             let shared_tasks_clone = std::sync::Arc::clone(&shared_tasks);
 
-            scope.spawn(move|_|{
+            scope.spawn(move||{
                 while let Some((idx, row)) = take_one(&shared_tasks_clone) {
                    trace_line(row, idx as i16, &objects_clone)
                 }
@@ -232,7 +229,8 @@ fn main() {
     let ref mut w = BufWriter::new(file);
 
     let mut encoder = png::Encoder::new(w, 1023, 767);
-    encoder.set(png::ColorType::RGBA).set(png::BitDepth::Eight);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
     let mut writer = encoder.write_header().unwrap();
     writer.write_image_data(&image_data).unwrap(); // Save
 }

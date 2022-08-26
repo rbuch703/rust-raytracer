@@ -122,10 +122,11 @@ impl Vec3 {
         self - &(normal * Vec3::dot(&self, &normal) * 2.0)
     }
 
-    pub fn get_cosine_distributed_random_ray(&self, rng: &mut dyn rand::Rng) -> Vec3 {
+    pub fn get_cosine_distributed_random_ray(&self, rng: &mut dyn rand::RngCore) -> Vec3 {
         // Step 1:Compute a uniformly distributed point on the unit disk
-        let r = f64::sqrt(rng.next_f64());
-        let phi = 2.0 * std::f64::consts::PI * rng.next_f64();
+        use crate::rand::Rng;
+        let r = f64::sqrt(rng.gen::<f64>());
+        let phi = 2.0 * std::f64::consts::PI * rng.gen::<f64>();
 
         // Step 2: Project point onto unit hemisphere
         let u = r * f64::cos(phi);

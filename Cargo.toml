@@ -1,13 +1,13 @@
 [package]
 name = "rust-raytracer"
 version = "0.1.0"
+edition = "2021"
 authors = ["rbuchhol"]
 
 [dependencies]
-png= ">=0.13"
-rand= ">0.4.0"
-crossbeam= ">=0.8.1"
-num_cpus= ">=1.13.0"
+png= "0.17.5"
+rand= { version="0.8.5", features=["small_rng"] }
+num_cpus= "1.13.1"
 
 [profile.release]
 debug = true
