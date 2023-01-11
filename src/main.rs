@@ -4,6 +4,8 @@ extern crate num_cpus;
 
 mod math3d;
 mod scene_objects;
+use std::sync::{Arc, Mutex};
+
 use math3d::Vec3;
 
 type SceneObject = dyn scene_objects::Object3D+Sync+Send;
@@ -191,7 +193,7 @@ fn trace_line(row: &mut[u8], row_idx: i16, objects: &Vec<Box<SceneObject>>) {
  
 }
 
-fn take_one<'a>(tasks: &'a std::sync::Arc::<std::sync::Mutex::<&mut std::collections::LinkedList::<(usize, &mut [u8])>>>) -> Option<(usize, &'a mut [u8])>
+fn take_one<'a>(tasks: &'a Arc::<Mutex::<std::collections::LinkedList::<(usize, &mut [u8])>>>) -> Option<(usize, &'a mut [u8])>
 {
     tasks.lock().unwrap().pop_front()
 }
@@ -203,22 +205,22 @@ fn main() {
     use std::fs::File;
     use std::io::BufWriter;
 
-    let objects = std::sync::Arc::new(create_scene());
+    let objects = create_scene();
 
     let mut image_data: Vec<u8> = vec![0; 767*1023*4];
-    let mut tasks : std::collections::LinkedList::<(usize, &mut [u8])> = image_data.chunks_mut(1023*4).enumerate().collect();
-    let mut shared_tasks = std::sync::Arc::new(std::sync::Mutex::new(&mut tasks));
+    let tasks : std::collections::LinkedList::<(usize, &mut [u8])> = image_data.chunks_mut(1023*4).enumerate().collect();
+    let shared_tasks = Arc::new(Mutex::new(tasks));
     
     let _ = std::thread::scope(|scope| {
         // create as many worker threads as we have CPU cores
-        for i in 1..=num_cpus::get()
+        for _ in 1..=num_cpus::get()
         {
-            let objects_clone = std::sync::Arc::clone(&objects);
-            let shared_tasks_clone = std::sync::Arc::clone(&shared_tasks);
+            let shared_tasks_clone = shared_tasks.clone();
 
-            scope.spawn(move||{
+            scope.spawn(||{
+                let shared_tasks_clone = shared_tasks_clone;
                 while let Some((idx, row)) = take_one(&shared_tasks_clone) {
-                   trace_line(row, idx as i16, &objects_clone)
+                   trace_line(row, idx as i16, &objects)
                 }
             });
         }
