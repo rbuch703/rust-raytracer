@@ -5,9 +5,9 @@ edition = "2021"
 authors = ["rbuchhol"]
 
 [dependencies]
-png= "0.17.5"
+png= "0.17.7"
 rand= { version="0.8.5", features=["small_rng"] }
-num_cpus= "1.13.1"
+num_cpus= "1"
 
 [profile.release]
 debug = true

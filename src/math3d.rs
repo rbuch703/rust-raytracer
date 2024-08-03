@@ -1,5 +1,11 @@
-
 extern crate rand;
+
+#[derive(Debug, Copy, Clone)]
+pub enum Axis {
+    X,
+    Y,
+    Z,
+}
 
 #[derive(Debug, Copy, Clone)]
 pub struct Vec3 {
@@ -17,10 +23,16 @@ impl fmt::Display for Vec3 {
         write!(
             f,
             "({}, {}, {})",
-            self.x as f32,
-            self.y as f32,
-            self.z as f32
+            self.x as f32, self.y as f32, self.z as f32
         )
+    }
+}
+
+impl ops::Neg for Vec3 {
+    type Output = Vec3;
+
+    fn neg(self) -> Self::Output {
+        Vec3::new(-self.x, -self.y, -self.z)
     }
 }
 
@@ -44,10 +56,9 @@ impl<'a> ops::Neg for &'a Vec3 {
     type Output = Vec3;
 
     fn neg(self) -> Vec3 {
-        Vec3::new( - self.x, - self.y, - self.z)
+        Vec3::new(-self.x, -self.y, -self.z)
     }
 }
-
 
 impl ops::Sub<Vec3> for Vec3 {
     type Output = Vec3;
@@ -81,7 +92,6 @@ impl<'a> ops::Mul<f64> for &'a Vec3 {
     }
 }
 
-
 impl Vec3 {
     pub fn new(x: f64, y: f64, z: f64) -> Vec3 {
         Vec3 { x, y, z }
@@ -95,7 +105,7 @@ impl Vec3 {
         self.x * self.x + self.y * self.y + self.z * self.z
     }
 
-    pub fn dot(&self, rhs: &Vec3) -> f64 {
+    pub fn dot(self, rhs: Vec3) -> f64 {
         self.x * rhs.x + self.y * rhs.y + self.z * rhs.z
     }
 
@@ -108,18 +118,26 @@ impl Vec3 {
         }
     }
 
-    pub fn cross(&self, rhs: &Vec3) -> Vec3 {
+    pub fn get(&self, axis: Axis) -> f64 {
+        match axis {
+            Axis::X => self.x,
+            Axis::Y => self.y,
+            Axis::Z => self.z,
+        }
+    }
+
+    pub fn cross(&self, rhs: Vec3) -> Vec3 {
         //copied from the internet, not verified
-        return Vec3::new(
+        Vec3::new(
             self.y * rhs.z - self.z * rhs.y,
             self.z * rhs.x - self.x * rhs.z,
             self.x * rhs.y - self.y * rhs.x,
-        );
+        )
     }
 
     pub fn reflect_at(&self, normal: &Vec3) -> Vec3 {
         //copied from the internet, not verified
-        self - &(normal * Vec3::dot(&self, &normal) * 2.0)
+        self - &(normal * normal.dot(*self) * 2.0)
     }
 
     pub fn get_cosine_distributed_random_ray(&self, rng: &mut dyn rand::RngCore) -> Vec3 {
@@ -133,30 +151,17 @@ impl Vec3 {
         let v = r * f64::sin(phi);
         let n = f64::sqrt(1.0 - r * r);
 
-
-        let udir = match f64::abs(Vec3::dot(&Vec3::new(0.0, 0.0, 1.0), &self)) >= 0.999999 {
-            false => Vec3::new(0.0, 0.0, 1.0),
+        let udir = if f64::abs(Vec3::new(0.0, 0.0, 1.0).dot(*self)) >= 0.999999 {
             //are (nearly) colinear --> cannot build coordinate base
-            true => Vec3::new(0.0, 1.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0)
+        } else {
+            Vec3::new(0.0, 0.0, 1.0)
         };
 
-        let vdir = Vec3::cross(&udir, &self).normalized();
-        let udir = Vec3::cross(&vdir, &self).normalized();
+        let vdir = udir.cross(*self).normalized();
+        let udir = vdir.cross(*self).normalized();
 
         //# Convert to a direction on the hemisphere defined by the normal
         udir * u + vdir * v + self * n
     }
 }
-    
-pub struct BoundingBox {
-    min: Vec3,
-    max: Vec3 
-}
-
-impl BoundingBox {
-    pub fn new(min: Vec3, max: Vec3) -> BoundingBox {
-        BoundingBox{min, max}
-    }
-
-}
-
