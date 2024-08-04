@@ -10,6 +10,11 @@ use std::sync::{Arc, Mutex};
 use math3d::Vec3;
 use scene_objects::{Material, SceneObject};
 
+const SCALE: usize = 1;
+const IMAGE_WIDTH: usize = 512 * SCALE;
+const IMAGE_HEIGHT_HALF: usize = 256 * SCALE;
+const IMAGE_HEIGHT: usize = IMAGE_HEIGHT_HALF * 2;
+
 fn set_color(pixel: &mut [u8], col: &Vec3) {
     pixel[0] = (col.x * 255.0) as u8;
     pixel[1] = (col.y * 255.0) as u8;
@@ -187,7 +192,7 @@ fn create_scene() -> Vec<Box<SceneObject>> {
     objects
 }
 
-fn trace_line(row: &mut [u8], row_idx: i16, objects: &Vec<Box<SceneObject>>) {
+fn trace_line(row: &mut [u8], row_idx: usize, objects: &Vec<Box<SceneObject>>) {
     println!("Tracing line {row_idx}");
     let ray_src = Vec3::new(0.0, 0.0, 0.0);
     let light_dir = Vec3::new(-1.0, -1.0, -1.0).normalized();
@@ -195,25 +200,22 @@ fn trace_line(row: &mut [u8], row_idx: i16, objects: &Vec<Box<SceneObject>>) {
     use rand::SeedableRng;
     let mut rng = rand::rngs::SmallRng::from_entropy();
 
-    for x in 0i16..1023 {
-        let v = Vec3::new((x - 511) as f64, (row_idx - 383) as f64, 512.0).normalized();
-        /*
-        if let Some(hit) = trace_ray(&readable_objects, &ray_src, &v) {
-            let p_hit = ray_src + v * hit.distance;
-            let n = hit.object.normal_at(p_hit);
-            let p_hit = p_hit + n * 1E-7;
-            set_color( &mut row[(x*4) as usize..], &(Vec3::new(1.0, 1.0, 1.0)* ambient_occlusion(&readable_objects, &p_hit, &n, &mut rng, 1000, 200.0)));
-        } else {
-            set_color( &mut row[(x*4) as usize..], &Vec3::new(0.0, 0.3, 0.8));
-        }*/
+    for x in 0..IMAGE_WIDTH {
+        let v = Vec3::new(
+            x as f64 - (IMAGE_WIDTH as f64 / 2.0),
+            row_idx as f64 - IMAGE_HEIGHT_HALF as f64,
+            IMAGE_WIDTH as f64 / 2.0,
+        )
+        .normalized();
 
         let col = get_color(objects, &ray_src, &v, &light_dir, &mut rng, 0);
+        // Transform colors from physical to perceptual
         let col = Vec3::new(
             clamp(col.x, 0.0, 1.0).sqrt(),
             clamp(col.y, 0.0, 1.0).sqrt(),
             clamp(col.z, 0.0, 1.0).sqrt(),
         );
-        set_color(&mut row[(x * 4) as usize..], &col);
+        set_color(&mut row[(x * 4)..], &col);
     }
 }
 
@@ -224,10 +226,9 @@ fn main() {
     use std::path::Path;
 
     let objects = create_scene();
-
-    let mut image_data: Vec<u8> = vec![0; 767 * 1023 * 4];
+    let mut image_data: Vec<u8> = vec![0; IMAGE_WIDTH * IMAGE_HEIGHT * 4];
     let tasks: std::collections::LinkedList<(usize, &mut [u8])> =
-        image_data.chunks_mut(1023 * 4).enumerate().collect();
+        image_data.chunks_mut(IMAGE_WIDTH * 4).enumerate().collect();
     let shared_tasks = Arc::new(Mutex::new(tasks));
 
     std::thread::scope(|scope| {
@@ -240,7 +241,7 @@ fn main() {
                 let take_one = || shared_tasks_clone.lock().unwrap().pop_front();
 
                 while let Some((idx, row)) = take_one() {
-                    trace_line(row, idx as i16, &objects)
+                    trace_line(row, idx, &objects)
                 }
             });
         }
@@ -250,7 +251,7 @@ fn main() {
     let file = File::create(path).unwrap();
     let w = BufWriter::new(file);
 
-    let mut encoder = png::Encoder::new(w, 1023, 767);
+    let mut encoder = png::Encoder::new(w, IMAGE_WIDTH as u32, IMAGE_HEIGHT as u32);
     encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);
     let mut writer = encoder.write_header().unwrap();
