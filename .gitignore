@@ -3,3 +3,5 @@
 image.png
 *.bak
 *.orig
+*.png
+*.blend*

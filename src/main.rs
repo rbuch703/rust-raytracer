@@ -3,14 +3,16 @@ extern crate png;
 extern crate rand;
 
 mod math3d;
+mod mesh;
 mod scene_objects;
 
 use std::sync::{Arc, Mutex};
 
 use math3d::Vec3;
+use mesh::TriangleMesh;
 use scene_objects::{Material, SceneObject};
 
-const SCALE: usize = 1;
+const SCALE: usize = 4;
 const IMAGE_WIDTH: usize = 512 * SCALE;
 const IMAGE_HEIGHT_HALF: usize = 256 * SCALE;
 const IMAGE_HEIGHT: usize = IMAGE_HEIGHT_HALF * 2;
@@ -22,7 +24,7 @@ fn set_color(pixel: &mut [u8], col: &Vec3) {
     pixel[3] = 255;
 }
 
-fn ambient_occlusion(
+fn _ambient_occlusion(
     objects: &[Box<SceneObject>],
     pos: &Vec3,
     normal: &Vec3,
@@ -72,7 +74,7 @@ fn get_color(
     ray_src: &Vec3,
     ray_dir: &Vec3,
     light_dir: &Vec3,
-    rng: &mut dyn rand::RngCore,
+    _rng: &mut dyn rand::RngCore,
     recursion_depth: u32,
 ) -> Vec3 {
     if recursion_depth > 5 {
@@ -95,8 +97,12 @@ fn get_color(
         let specular = clamp(Vec3::dot(r, *light_dir), 0.0, 1.0).powf(material.specular_exponent)
             * material.specular_strength;
 
-        let brightness =
-            (diffuse + ambient) * ambient_occlusion(objects, &p_hit, &n, rng, 100, 200.0);
+        let brightness = diffuse + ambient;
+        /*if recursion_depth == 1 {
+            // Compute ambient occlusion only for the object hit by the camera ray and the first
+            // reflection, to save some computation time.
+            brightness *= ambient_occlusion(objects, &p_hit, &n, rng, 100, 200.0)
+        } ;*/
         let color = material.color * brightness + light_color * specular;
         if material.reflectance > 0.0 {
             color * (1.0 - material.reflectance)
@@ -105,7 +111,7 @@ fn get_color(
                     &p_hit,
                     &ray_dir.reflect_at(&n),
                     light_dir,
-                    rng,
+                    _rng,
                     recursion_depth + 1,
                 ) * material.reflectance
         } else {
@@ -189,10 +195,53 @@ fn create_scene() -> Vec<Box<SceneObject>> {
         )));
     }
 
+    objects.push(Box::new(
+        TriangleMesh::from_obj_file(
+            "data/bunny.obj",
+            Material::new(Vec3::new(0.8, 0.2, 0.2), 0.0, 0.3, 32.0),
+        )
+        .expect("Valid OBJ"),
+    ));
+
     objects
 }
 
-fn trace_line(row: &mut [u8], row_idx: usize, objects: &Vec<Box<SceneObject>>) {
+fn _trace_line_360_sbs(row: &mut [u8], row_idx: usize, objects: &Vec<Box<SceneObject>>) {
+    println!("Tracing line {row_idx}");
+    let ray_src = Vec3::new(0.0, 0.0, 0.0);
+    let light_dir = Vec3::new(-1.0, -1.0, -1.0).normalized();
+
+    use rand::SeedableRng;
+    let mut rng = rand::rngs::SmallRng::from_entropy();
+    let y_rel = ((row_idx % IMAGE_HEIGHT_HALF) as f64) / (IMAGE_HEIGHT_HALF as f64);
+    let top = row_idx < IMAGE_HEIGHT_HALF;
+    let y_rad = (y_rel - 0.5) * std::f64::consts::PI;
+
+    for x in 0..IMAGE_WIDTH {
+        let x_rel = (x as f64) / (IMAGE_WIDTH as f64);
+        let x_rad = (x_rel - 0.5) * 2.0 * std::f64::consts::PI;
+
+        let v = Vec3::new(
+            x_rad.sin() * y_rad.cos(),
+            y_rad.sin(),
+            x_rad.cos() * y_rad.cos(),
+        )
+        .normalized();
+
+        let ray_src = ray_src + Vec3::new(if top { -10.0 } else { 10.0 }, 0.0, 0.0);
+
+        let col = get_color(objects, &ray_src, &v, &light_dir, &mut rng, 0);
+        // Transform colors from physical to perceptual
+        let col = Vec3::new(
+            clamp(col.x, 0.0, 1.0).sqrt(),
+            clamp(col.y, 0.0, 1.0).sqrt(),
+            clamp(col.z, 0.0, 1.0).sqrt(),
+        );
+        set_color(&mut row[(x * 4)..], &col);
+    }
+}
+
+fn _trace_line(row: &mut [u8], row_idx: usize, objects: &Vec<Box<SceneObject>>) {
     println!("Tracing line {row_idx}");
     let ray_src = Vec3::new(0.0, 0.0, 0.0);
     let light_dir = Vec3::new(-1.0, -1.0, -1.0).normalized();
@@ -241,7 +290,7 @@ fn main() {
                 let take_one = || shared_tasks_clone.lock().unwrap().pop_front();
 
                 while let Some((idx, row)) = take_one() {
-                    trace_line(row, idx, &objects)
+                    _trace_line_360_sbs(row, idx, &objects)
                 }
             });
         }
