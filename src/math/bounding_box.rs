@@ -1,6 +1,6 @@
 use std::ops::{BitOr, BitOrAssign};
 
-use crate::math::{Axis, Bounded3D, Range, Vec3};
+use crate::math::{Axis, Geometry3D, Range, Vec3};
 
 #[derive(Clone, Copy, Debug)]
 pub struct BoundingBox {
@@ -35,20 +35,40 @@ impl <T> TryFrom<&[T]> for BoundingBox where T: Bounded3D {
 }*/
 
 impl BoundingBox {
-    pub fn from_items<T>(items: &[T]) -> Option<BoundingBox>
-    where
-        T: Bounded3D,
-    {
-        let mut res = match items.first() {
-            Some(item) => item.bounds(),
-            None => return None,
-        };
+    pub fn from_items<T>(items: &[impl Geometry3D]) -> Option<BoundingBox> {
+        let mut res = None;
 
-        for item in &items[1..] {
-            res |= &item.bounds();
+        for item in items {
+            if let Some(bounds) = item.bounds() {
+                if let Some(mut res) = res {
+                    res |= &bounds;
+                } else {
+                    res = Some(bounds);
+                }
+            }
         }
 
-        Some(res)
+        res
+    }
+
+    pub fn from_vertices(vertices: &[Vec3]) -> Option<BoundingBox> {
+        let (mut x, mut y, mut z) = if let Some(first) = vertices.first() {
+            (
+                Range::new(first.x),
+                Range::new(first.y),
+                Range::new(first.z),
+            )
+        } else {
+            return None;
+        };
+
+        for v in &vertices[1..] {
+            x |= v.x;
+            y |= v.y;
+            z |= v.z;
+        }
+
+        Some(BoundingBox { x, y, z })
     }
 
     pub fn get(&self, axis: Axis) -> Range {

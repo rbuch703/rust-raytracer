@@ -11,9 +11,6 @@ use std::fmt;
 use std::ops;
 
 use crate::math::Axis;
-use crate::math::Bounded3D;
-use crate::math::BoundingBox;
-use crate::math::Range;
 
 impl fmt::Display for Vec3 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -87,16 +84,6 @@ impl ops::Mul<f64> for &Vec3 {
 
     fn mul(self, rhs: f64) -> Vec3 {
         Vec3::new(self.x * rhs, self.y * rhs, self.z * rhs)
-    }
-}
-
-impl Bounded3D for Vec3 {
-    fn bounds(&self) -> BoundingBox {
-        BoundingBox {
-            x: Range::new(self.x),
-            y: Range::new(self.y),
-            z: Range::new(self.z),
-        }
     }
 }
 

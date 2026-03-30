@@ -1,4 +1,4 @@
-use crate::math::{Bounded3D, BoundingBox, Geometry3D, GeometryHitRecord, Vec3};
+use crate::math::{BoundingBox, Geometry3D, GeometryHitRecord, Vec3};
 
 pub struct Sphere {
     center: Vec3,
@@ -39,11 +39,11 @@ impl Geometry3D for Sphere {
             }
         }
     }
-}
 
-impl Bounded3D for Sphere {
-    fn bounds(&self) -> BoundingBox {
-        (self.center - Vec3::new(1.0, 1.0, 1.0) * self.radius).bounds()
-            | (self.center + Vec3::new(1.0, 1.0, 1.0) * self.radius).bounds()
+    fn bounds(&self) -> Option<BoundingBox> {
+        BoundingBox::from_vertices(&[
+            self.center - Vec3::new(1.0, 1.0, 1.0) * self.radius,
+            self.center + Vec3::new(1.0, 1.0, 1.0) * self.radius,
+        ])
     }
 }

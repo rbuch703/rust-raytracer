@@ -12,10 +12,11 @@ use scene_objects::Material;
 
 use crate::{
     math::{Plane, Sphere, Vec3},
-    scene_objects::{SceneObject, TriangleMesh},
+    scene_objects::{KDTreeNode, SceneObject, SimpleSceneObject},
+    utils::parse_obj,
 };
 
-const SCALE: usize = 2;
+const SCALE: usize = 8;
 const IMAGE_WIDTH: usize = 512 * SCALE;
 const IMAGE_HEIGHT_HALF: usize = 256 * SCALE;
 const IMAGE_HEIGHT: usize = IMAGE_HEIGHT_HALF * 2;
@@ -28,7 +29,7 @@ fn set_color(pixel: &mut [u8], col: &Vec3) {
 }
 
 fn _ambient_occlusion(
-    objects: &[SceneObject],
+    objects: &[Box<dyn SceneObject + Sync + Send>],
     pos: &Vec3,
     normal: &Vec3,
     rng: &mut dyn rand::RngCore,
@@ -49,7 +50,7 @@ fn _ambient_occlusion(
 }
 
 fn trace_ray<'a>(
-    objects: &'a [SceneObject],
+    objects: &'a [Box<dyn SceneObject + Sync + Send>],
     ray_src: &Vec3,
     ray_dir: &Vec3,
 ) -> Option<scene_objects::ObjectHitRecord<'a>> {
@@ -73,7 +74,7 @@ fn trace_ray<'a>(
 }
 
 fn get_color(
-    objects: &Vec<SceneObject>,
+    objects: &[Box<dyn SceneObject + Sync + Send>],
     ray_src: &Vec3,
     ray_dir: &Vec3,
     light_dir: &Vec3,
@@ -94,18 +95,18 @@ fn get_color(
 
         let diffuse = clamp(Vec3::dot(n, *light_dir), 0.0, 1.0);
 
-        let material = &obj.object.get_material();
+        let material = &obj.material;
         let light_color = Vec3::new(1.0, 0.7, 0.8);
         let r = ray_dir.reflect_at(&n);
         let specular = clamp(Vec3::dot(r, *light_dir), 0.0, 1.0).powf(material.specular_exponent)
             * material.specular_strength;
 
-        let brightness = diffuse + ambient;
-        /*if recursion_depth == 1 {
+        let mut brightness = diffuse + ambient;
+        if recursion_depth < 2 {
             // Compute ambient occlusion only for the object hit by the camera ray and the first
             // reflection, to save some computation time.
-            brightness *= ambient_occlusion(objects, &p_hit, &n, rng, 100, 200.0)
-        } ;*/
+            //brightness *= _ambient_occlusion(objects, &p_hit, &n, _rng, 100, 200.0)
+        }
         let color = material.color * brightness + light_color * specular;
         if material.reflectance > 0.0 {
             color * (1.0 - material.reflectance)
@@ -137,30 +138,25 @@ fn clamp(v: f64, min: f64, max: f64) -> f64 {
     v
 }
 
-fn create_scene() -> Vec<SceneObject> {
-    let mut objects: Vec<SceneObject> = vec![
-        SceneObject::new(
+fn create_scene() -> Vec<SimpleSceneObject> {
+    let mut objects: Vec<SimpleSceneObject> = vec![
+        /*SimpleSceneObject::new(
             Sphere::new(Vec3::new(-100.0, -80.0, 400.0), 40.0),
             scene_objects::Material::new_diffuse(Vec3::new(0.8, 0.8, 0.8)),
         ),
-        SceneObject::new(
+        SimpleSceneObject::new(
             Sphere::new(Vec3::new(100.0, -80.0, 400.0), 40.0),
             scene_objects::Material::new_diffuse(Vec3::new(0.8, 0.8, 0.8)),
         ),
-        /*  Box::new(scene_objects::Sphere::new(
-            Vec3::new(0.0, 50.0, 700.0),
-            350.0,
-            scene_objects::Material::new(Vec3::new(0.8, 0.8, 0.0), 0.1, 1.0, 10.0),
-        )),*/
-        SceneObject::new(
+        SimpleSceneObject::new(
             Sphere::new(Vec3::new(100.0, -80.0, 370.0), 20.0),
             scene_objects::Material::new(Vec3::new(0.1, 0.1, 0.1), 0.0, 1.0, 20.0),
         ),
-        SceneObject::new(
+        SimpleSceneObject::new(
             Sphere::new(Vec3::new(-100.0, -80.0, 370.0), 20.0),
             scene_objects::Material::new(Vec3::new(0.1, 0.1, 0.1), 0.0, 1.0, 20.0),
-        ),
-        SceneObject::new(
+        ),*/
+        SimpleSceneObject::new(
             Plane::new(Vec3::new(0.0, 200.0, 0.0), Vec3::new(0.0, -1.0, 0.0)),
             scene_objects::Material::new_diffuse(Vec3::new(0.1, 0.5, 0.1)),
         ),
@@ -173,38 +169,58 @@ fn create_scene() -> Vec<SceneObject> {
 
     for _i in 0..800 {
         let center = Vec3::new(
-            (rng.r#gen::<f64>() - 0.5) * 4000.0,
-            200.0 - (rng.r#gen::<f64>()) * 2000.0,
-            (rng.r#gen::<f64>() - 0.5) * 4000.0,
+            (rng.r#gen::<f64>() - 0.6) * 4000.0,
+            300.0 - (rng.r#gen::<f64>()) * 2000.0,
+            (rng.r#gen::<f64>() - 0.6) * 4000.0,
         );
 
         let dist = center.len();
-        objects.push(Box::new(scene_objects::Sphere::new(
-            center,
-            rng.r#gen::<f64>() * dist / 5.0,
-            Material::new(
-                Vec3::new(
-                    0.5 + 0.5 * rng.r#gen::<f64>(),
-                    0.5 + 0.5 * rng.r#gen::<f64>(),
-                    0.5 + 0.5 * rng.r#gen::<f64>(),
-                ),
-                0.3,
-                1.0,
-                50.0,
+
+        let mat = Material::new(
+            Vec3::new(
+                0.5 + 0.5 * rng.r#gen::<f64>(),
+                0.5 + 0.5 * rng.r#gen::<f64>(),
+                0.5 + 0.5 * rng.r#gen::<f64>(),
             ),
-        )));
+            0.3,
+            1.0,
+            50.0,
+        );
+
+        objects.push(SimpleSceneObject::new(
+            Sphere::new(center, rng.r#gen::<f64>() * dist / 5.0),
+            mat,
+        ));
     }
     */
 
-    objects.push(SceneObject::new(
-        TriangleMesh::from_obj_file("data/bunny.obj").expect("Valid OBJ"),
-        Material::new(Vec3::new(0.8, 0.2, 0.2), 0.0, 0.3, 32.0),
-    ));
+    for triangle in parse_obj("data/bunny.obj").expect("Valid OBJ") {
+        let transform = |v: Vec3| {
+            Vec3::new(
+                v.x * 10000.0,
+                v.y * -10000.0 + 500.0,
+                -v.z * 10000.0 + 1000.0,
+            )
+        };
+        let triangle = crate::math::Triangle::new(
+            transform(triangle.v1),
+            transform(triangle.v2),
+            transform(triangle.v3),
+        );
+        objects.push(SimpleSceneObject::new(
+            triangle,
+            Material::new(Vec3::new(0.8, 0.2, 0.2), 0.0, 0.3, 32.0),
+        ));
+    }
 
     objects
 }
 
-fn _trace_line_360_sbs(row: &mut [u8], row_idx: usize, objects: &Vec<SceneObject>) {
+fn _trace_line_360_sbs(
+    row: &mut [u8],
+    row_idx: usize,
+    objects: &[Box<dyn SceneObject + Sync + Send>],
+) {
     println!("Tracing line {row_idx}");
     let ray_src = Vec3::new(0.0, 0.0, 0.0);
     let light_dir = Vec3::new(-1.0, -1.0, -1.0).normalized();
@@ -241,7 +257,7 @@ fn _trace_line_360_sbs(row: &mut [u8], row_idx: usize, objects: &Vec<SceneObject
     }
 }
 
-fn _trace_line(row: &mut [u8], row_idx: usize, objects: &Vec<SceneObject>) {
+fn _trace_line(row: &mut [u8], row_idx: usize, objects: &[Box<dyn SceneObject + Sync + Send>]) {
     println!("Tracing line {row_idx}");
     let ray_src = Vec3::new(0.0, 0.0, 0.0);
     let light_dir = Vec3::new(-1.0, -1.0, -1.0).normalized();
@@ -275,6 +291,23 @@ fn main() {
     use std::path::Path;
 
     let objects = create_scene();
+    let mut bounded_objects = Vec::new();
+    let mut unbounded_objects = Vec::new();
+    for obj in objects {
+        if obj.bounds().is_some() {
+            bounded_objects.push(obj);
+        } else {
+            unbounded_objects.push(obj);
+        }
+    }
+
+    let mut objects = unbounded_objects
+        .into_iter()
+        .map(|obj| Box::new(obj) as Box<dyn SceneObject + Sync + Send>)
+        .collect::<Vec<_>>();
+
+    objects.push(Box::new(KDTreeNode::new(bounded_objects)) as Box<dyn SceneObject + Sync + Send>);
+
     let mut image_data: Vec<u8> = vec![0; IMAGE_WIDTH * IMAGE_HEIGHT * 4];
     let tasks: std::collections::LinkedList<(usize, &mut [u8])> =
         image_data.chunks_mut(IMAGE_WIDTH * 4).enumerate().collect();

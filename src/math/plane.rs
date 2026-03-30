@@ -27,4 +27,9 @@ impl Geometry3D for Plane {
             })
         }
     }
+
+    fn bounds(&self) -> Option<super::BoundingBox> {
+        // A plane is unbounded
+        None
+    }
 }

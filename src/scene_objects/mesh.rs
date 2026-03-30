@@ -1,6 +1,8 @@
+use core::panic;
+
 use crate::{
-    math::{Axis, Bounded3D, BoundingBox, GeometryHitRecord, Triangle, Vec3},
-    scene_objects::Geometry3D,
+    math::{Axis, Vec3},
+    scene_objects::{ObjectHitRecord, SceneObject, SimpleSceneObject},
 };
 
 pub struct KDTreeNodeSubdivision {
@@ -11,11 +13,11 @@ pub struct KDTreeNodeSubdivision {
 }
 
 impl KDTreeNodeSubdivision {
-    fn hit_recursive(
-        &self,
+    fn hit_recursive<'a>(
+        &'a self,
         ray_src: &Vec3,
         ray_dir: &Vec3,
-        best_hit: &mut Option<GeometryHitRecord>,
+        best_hit: &mut Option<ObjectHitRecord<'a>>,
     ) {
         if ray_src.get(self.axis) == self.position {
             /* Edge case: if the ray starts *on* the split plane then both half-spaces must be
@@ -82,8 +84,9 @@ impl KDTreeNodeSubdivision {
             if let Some(child_hit) = best_hit_child
                 && (distance_to_split_plane + child_hit.distance < best_hit.distance)
             {
-                *best_hit = GeometryHitRecord {
-                    distance: distance_to_split_plane + child_hit.distance,
+                *best_hit = ObjectHitRecord {
+                    distance: child_hit.distance + distance_to_split_plane,
+                    material: child_hit.material,
                     normal: child_hit.normal,
                 };
             }
@@ -99,14 +102,14 @@ impl KDTreeNodeSubdivision {
 }
 
 pub struct KDTreeNode {
-    children: Vec<Triangle<Vec3>>,
+    children: Vec<SimpleSceneObject>,
     subdivision: Option<Box<KDTreeNodeSubdivision>>,
 }
 
 const MAX_ITEMS_PER_NODE: usize = 64;
 
 impl KDTreeNode {
-    pub fn new(items: Vec<Triangle<Vec3>>) -> Self {
+    pub fn new(items: Vec<SimpleSceneObject>) -> Self {
         if items.len() < MAX_ITEMS_PER_NODE {
             return KDTreeNode {
                 children: items,
@@ -114,7 +117,16 @@ impl KDTreeNode {
             };
         }
 
-        let bounds = BoundingBox::from_items(&items).expect("non-empty list");
+        if items.iter().any(|f| f.bounds().is_none()) {
+            panic!("Cannot create KDTreeNode with unbounded items");
+        }
+
+        let mut individual_bounds = items.iter().filter_map(|item| item.bounds());
+        let bounds = if let Some(first) = individual_bounds.next() {
+            individual_bounds.fold(first, |acc, b| acc | b)
+        } else {
+            panic!("Cannot create KDTreeNode with empty item list");
+        };
 
         // Split along the axis with the largest range
         let split_axis = if bounds.x.size() >= bounds.y.size() && bounds.x.size() >= bounds.z.size()
@@ -132,7 +144,7 @@ impl KDTreeNode {
         let mut items_positive = Vec::new();
 
         for item in items {
-            let bounds = item.bounds();
+            let bounds = item.bounds().expect("unbounded item in KDTree");
 
             if bounds.get(split_axis).max < mid {
                 // entirely in negative half-space
@@ -157,22 +169,31 @@ impl KDTreeNode {
         }
     }
 
+    /*
     fn _bounding_box(&self) -> Option<BoundingBox> {
         BoundingBox::from_items(&self.children)
-    }
+    }*/
 
-    pub fn hit_recursive(
-        &self,
+    pub fn hit_recursive<'a>(
+        &'a self,
         ray_src: &Vec3,
         ray_dir: &Vec3,
-        best_hit: &mut Option<GeometryHitRecord>,
+        best_hit: &mut Option<ObjectHitRecord<'a>>,
     ) {
-        for triangle in &self.children {
-            if let Some(this_hit) = triangle.hit(ray_src, ray_dir) {
-                *best_hit = Some(match best_hit {
-                    Some(prev) => prev.min(this_hit),
-                    None => this_hit,
-                });
+        for obj in &self.children {
+            if let Some(this_hit) = obj.hit(ray_src, ray_dir) {
+                match best_hit {
+                    Some(prev) => {
+                        if this_hit.distance < prev.distance {
+                            *best_hit = Some(ObjectHitRecord {
+                                distance: this_hit.distance,
+                                normal: this_hit.normal,
+                                material: this_hit.material,
+                            });
+                        }
+                    }
+                    None => *best_hit = Some(this_hit),
+                }
             }
         }
 
@@ -233,4 +254,12 @@ impl KDTreeNode {
         }
     }
     */
+}
+
+impl SceneObject for KDTreeNode {
+    fn hit(&self, ray_origin: &Vec3, ray_direction: &Vec3) -> Option<ObjectHitRecord<'_>> {
+        let mut best_hit = None;
+        self.hit_recursive(ray_origin, ray_direction, &mut best_hit);
+        best_hit
+    }
 }

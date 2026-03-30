@@ -1,4 +1,4 @@
-use crate::{
+/*use crate::{
     math::{Bounded3D, BoundingBox, Geometry3D, GeometryHitRecord, Triangle, Vec3},
     scene_objects::mesh::KDTreeNode,
     utils::parse_obj,
@@ -65,3 +65,4 @@ impl Bounded3D for TriangleMesh {
         self.bounds
     }
 }
+*/

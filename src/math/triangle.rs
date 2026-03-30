@@ -1,4 +1,4 @@
-use crate::math::{Bounded3D, BoundingBox, Geometry3D, GeometryHitRecord, Vec3};
+use crate::math::{BoundingBox, Geometry3D, GeometryHitRecord, Vec3};
 
 pub struct Triangle<T> {
     pub v1: T,
@@ -50,10 +50,8 @@ impl Geometry3D for Triangle<Vec3> {
             None
         }
     }
-}
 
-impl Bounded3D for Triangle<Vec3> {
-    fn bounds(&self) -> BoundingBox {
-        self.v1.bounds() | self.v2.bounds() | self.v3.bounds()
+    fn bounds(&self) -> Option<BoundingBox> {
+        BoundingBox::from_vertices(&[self.v1, self.v2, self.v3])
     }
 }

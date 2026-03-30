@@ -5,11 +5,6 @@ pub enum Axis {
     Z,
 }
 
-// Any object that has 3D axis-aligned bounds
-pub trait Bounded3D {
-    fn bounds(&self) -> BoundingBox;
-}
-
 #[derive(Clone, Copy)]
 pub struct GeometryHitRecord {
     pub distance: f64,
@@ -28,6 +23,7 @@ impl GeometryHitRecord {
 
 pub trait Geometry3D {
     fn hit(&self, ray_src: &Vec3, ray_dir: &Vec3) -> Option<GeometryHitRecord>;
+    fn bounds(&self) -> Option<BoundingBox>;
 }
 
 mod vec3;

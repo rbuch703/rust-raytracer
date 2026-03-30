@@ -1,8 +1,6 @@
 mod mesh;
-use crate::math::{Geometry3D, Vec3};
-
-mod triangle_mesh;
-pub use triangle_mesh::TriangleMesh;
+use crate::math::{BoundingBox, Geometry3D, Vec3};
+pub use mesh::KDTreeNode;
 
 pub struct Material {
     pub color: Vec3,
@@ -47,18 +45,21 @@ impl Material {
 }
 
 //pub type SceneObject = dyn Object3D + Sync + Send;
+pub trait SceneObject {
+    fn hit(&self, ray_origin: &Vec3, ray_direction: &Vec3) -> Option<ObjectHitRecord<'_>>;
+}
 
-pub struct SceneObject {
+pub struct SimpleSceneObject {
     geometry: Box<dyn Geometry3D + Sync + Send>,
     material: Material,
 }
 
-impl SceneObject {
+impl SimpleSceneObject {
     pub fn new(
         geometry: impl Geometry3D + Sync + Send + 'static,
         material: Material,
-    ) -> SceneObject {
-        SceneObject {
+    ) -> SimpleSceneObject {
+        SimpleSceneObject {
             geometry: Box::new(geometry),
             material,
         }
@@ -67,24 +68,26 @@ impl SceneObject {
     pub fn _from_random_material(
         geometry: Box<dyn Geometry3D + Sync + Send>,
         rng: &mut dyn rand::RngCore,
-    ) -> SceneObject {
-        SceneObject {
+    ) -> SimpleSceneObject {
+        SimpleSceneObject {
             geometry,
             material: Material::_rand(rng),
         }
     }
 
-    pub fn get_material(&self) -> &Material {
-        &self.material
+    pub fn bounds(&self) -> Option<BoundingBox> {
+        self.geometry.bounds()
     }
+}
 
-    pub fn hit(&self, ray_origin: &Vec3, ray_direction: &Vec3) -> Option<ObjectHitRecord<'_>> {
+impl SceneObject for SimpleSceneObject {
+    fn hit(&self, ray_origin: &Vec3, ray_direction: &Vec3) -> Option<ObjectHitRecord<'_>> {
         self.geometry
             .hit(ray_origin, ray_direction)
             .map(|hit_record| ObjectHitRecord {
                 distance: hit_record.distance,
                 normal: hit_record.normal,
-                object: self,
+                material: &self.material,
             })
     }
 }
@@ -92,5 +95,15 @@ impl SceneObject {
 pub struct ObjectHitRecord<'a> {
     pub distance: f64,
     pub normal: Vec3,
-    pub object: &'a SceneObject,
+    pub material: &'a Material,
+}
+
+impl<'a> ObjectHitRecord<'a> {
+    pub fn min(self, other: ObjectHitRecord<'a>) -> Self {
+        if self.distance < other.distance {
+            self
+        } else {
+            other
+        }
+    }
 }
