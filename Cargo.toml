@@ -1,12 +1,12 @@
 [package]
 name = "rust-raytracer"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 authors = ["rbuchhol"]
 
 [dependencies]
-png= "0.17.7"
-rand= { version="0.8.5", features=["small_rng"] }
+png= "0.17"
+rand= { version="0.8", features=["small_rng"] }
 num_cpus= "1"
 
 [profile.release]

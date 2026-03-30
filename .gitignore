@@ -5,3 +5,5 @@ image.png
 *.orig
 *.png
 *.blend*
+.vscode
+*.obj

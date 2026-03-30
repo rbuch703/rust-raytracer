@@ -2,17 +2,16 @@ extern crate num_cpus;
 extern crate png;
 extern crate rand;
 
-mod math3d;
-mod mesh;
+mod math;
 mod scene_objects;
 
 use std::sync::{Arc, Mutex};
 
-use math3d::Vec3;
-use mesh::TriangleMesh;
 use scene_objects::{Material, SceneObject};
 
-const SCALE: usize = 4;
+use crate::{math::Vec3, scene_objects::TriangleMesh};
+
+const SCALE: usize = 2;
 const IMAGE_WIDTH: usize = 512 * SCALE;
 const IMAGE_HEIGHT_HALF: usize = 256 * SCALE;
 const IMAGE_HEIGHT: usize = IMAGE_HEIGHT_HALF * 2;
@@ -35,11 +34,10 @@ fn _ambient_occlusion(
     let mut num_hits = 0;
     for _ in 0..num_samples {
         let d = normal.get_cosine_distributed_random_ray(rng);
-        if let Some(hit) = trace_ray(objects, pos, &d) {
-            if hit.distance < distance_cutoff {
+        if let Some(hit) = trace_ray(objects, pos, &d)
+            && hit.distance < distance_cutoff {
                 num_hits += 1;
             }
-        }
     }
 
     1.0 - (num_hits as f64) / (num_samples as f64)
@@ -171,22 +169,23 @@ fn create_scene() -> Vec<Box<SceneObject>> {
     use rand::SeedableRng;
     let mut rng = rand::rngs::SmallRng::seed_from_u64(44);
     use crate::rand::Rng;
+
     for _i in 0..800 {
         let center = Vec3::new(
-            (rng.gen::<f64>() - 0.5) * 4000.0,
-            200.0 - (rng.gen::<f64>()) * 2000.0,
-            (rng.gen::<f64>() - 0.5) * 4000.0,
+            (rng.r#gen::<f64>() - 0.5) * 4000.0,
+            200.0 - (rng.r#gen::<f64>()) * 2000.0,
+            (rng.r#gen::<f64>() - 0.5) * 4000.0,
         );
 
         let dist = center.len();
         objects.push(Box::new(scene_objects::Sphere::new(
             center,
-            rng.gen::<f64>() * dist / 5.0,
+            rng.r#gen::<f64>() * dist / 5.0,
             Material::new(
                 Vec3::new(
-                    0.5 + 0.5 * rng.gen::<f64>(),
-                    0.5 + 0.5 * rng.gen::<f64>(),
-                    0.5 + 0.5 * rng.gen::<f64>(),
+                    0.5 + 0.5 * rng.r#gen::<f64>(),
+                    0.5 + 0.5 * rng.r#gen::<f64>(),
+                    0.5 + 0.5 * rng.r#gen::<f64>(),
                 ),
                 0.3,
                 1.0,
@@ -228,7 +227,9 @@ fn _trace_line_360_sbs(row: &mut [u8], row_idx: usize, objects: &Vec<Box<SceneOb
         )
         .normalized();
 
-        let ray_src = ray_src + Vec3::new(if top { -10.0 } else { 10.0 }, 0.0, 0.0);
+        let plane_tangent =
+            Vec3::new(-x_rad.cos(), 0.0, x_rad.sin()) * (if top { 1.0 } else { -1.0 });
+        let ray_src = ray_src + (plane_tangent * 10.0);
 
         let col = get_color(objects, &ray_src, &v, &light_dir, &mut rng, 0);
         // Transform colors from physical to perceptual

@@ -1,13 +1,6 @@
 extern crate rand;
 
 #[derive(Debug, Copy, Clone)]
-pub enum Axis {
-    X,
-    Y,
-    Z,
-}
-
-#[derive(Debug, Copy, Clone)]
 pub struct Vec3 {
     pub x: f64,
     pub y: f64,
@@ -16,6 +9,8 @@ pub struct Vec3 {
 
 use std::fmt;
 use std::ops;
+
+use crate::math::Axis;
 
 impl fmt::Display for Vec3 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -44,7 +39,7 @@ impl ops::Add<Vec3> for Vec3 {
     }
 }
 
-impl<'a> ops::Add<Vec3> for &'a Vec3 {
+impl ops::Add<Vec3> for &Vec3 {
     type Output = Vec3;
 
     fn add(self, rhs: Vec3) -> Vec3 {
@@ -52,7 +47,7 @@ impl<'a> ops::Add<Vec3> for &'a Vec3 {
     }
 }
 
-impl<'a> ops::Neg for &'a Vec3 {
+impl ops::Neg for &Vec3 {
     type Output = Vec3;
 
     fn neg(self) -> Vec3 {
@@ -68,7 +63,7 @@ impl ops::Sub<Vec3> for Vec3 {
     }
 }
 
-impl<'a, 'b> ops::Sub<&'a Vec3> for &'b Vec3 {
+impl<'a> ops::Sub<&'a Vec3> for &Vec3 {
     type Output = Vec3;
 
     fn sub(self, rhs: &'a Vec3) -> Vec3 {
@@ -84,7 +79,7 @@ impl ops::Mul<f64> for Vec3 {
     }
 }
 
-impl<'a> ops::Mul<f64> for &'a Vec3 {
+impl ops::Mul<f64> for &Vec3 {
     type Output = Vec3;
 
     fn mul(self, rhs: f64) -> Vec3 {
@@ -143,8 +138,8 @@ impl Vec3 {
     pub fn get_cosine_distributed_random_ray(&self, rng: &mut dyn rand::RngCore) -> Vec3 {
         // Step 1:Compute a uniformly distributed point on the unit disk
         use crate::rand::Rng;
-        let r = f64::sqrt(rng.gen::<f64>());
-        let phi = 2.0 * std::f64::consts::PI * rng.gen::<f64>();
+        let r = f64::sqrt(rng.r#gen::<f64>());
+        let phi = 2.0 * std::f64::consts::PI * rng.r#gen::<f64>();
 
         // Step 2: Project point onto unit hemisphere
         let u = r * f64::cos(phi);
