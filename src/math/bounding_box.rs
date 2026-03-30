@@ -2,7 +2,6 @@ use std::ops::{BitOr, BitOrAssign};
 
 use crate::math::{Axis, Bounded3D, Range, Vec3};
 
-
 #[derive(Clone, Copy, Debug)]
 pub struct BoundingBox {
     pub x: Range,
@@ -34,7 +33,6 @@ impl <T> TryFrom<&[T]> for BoundingBox where T: Bounded3D {
         todo!()
     }
 }*/
-
 
 impl BoundingBox {
     pub fn from_items<T>(items: &[T]) -> Option<BoundingBox>

@@ -1,23 +1,18 @@
-use crate::{math::{Bounded3D, BoundingBox, Vec3}, scene_objects::{HitRecord, Material, Object3D}};
+use crate::math::{Bounded3D, BoundingBox, Geometry3D, GeometryHitRecord, Vec3};
 
 pub struct Sphere {
     center: Vec3,
     radius: f64,
-    material: Material,
 }
 
 impl Sphere {
-    pub fn new(center: Vec3, radius: f64, material: Material) -> Sphere {
-        Sphere {
-            center,
-            radius,
-            material,
-        }
+    pub fn new(center: Vec3, radius: f64) -> Sphere {
+        Sphere { center, radius }
     }
 }
 
-impl Object3D for Sphere {
-    fn hit(&self, ray_src: &Vec3, ray_dir: &Vec3) -> Option<HitRecord<'_>> {
+impl Geometry3D for Sphere {
+    fn hit(&self, ray_src: &Vec3, ray_dir: &Vec3) -> Option<GeometryHitRecord> {
         // from https://en.wikipedia.org/wiki/Line%E2%80%93sphere_intersection
         let oc = ray_src - &self.center;
         //let fac = -Vec3::dot(ray_dir, &oc);
@@ -37,17 +32,12 @@ impl Object3D for Sphere {
             } else {
                 let distance = if v1 - v2 >= 0.0 { v1 - v2 } else { v1 + v2 };
                 let hit_point = ray_src + ray_dir * distance;
-                Some(HitRecord {
+                Some(GeometryHitRecord {
                     distance,
-                    object: self,
                     normal: (hit_point - self.center).normalized(),
                 })
             }
         }
-    }
-
-    fn get_material(&self) -> &Material {
-        &self.material
     }
 }
 

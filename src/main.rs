@@ -4,12 +4,16 @@ extern crate rand;
 
 mod math;
 mod scene_objects;
+mod utils;
 
 use std::sync::{Arc, Mutex};
 
-use scene_objects::{Material, SceneObject};
+use scene_objects::Material;
 
-use crate::{math::Vec3, scene_objects::TriangleMesh};
+use crate::{
+    math::{Plane, Sphere, Vec3},
+    scene_objects::{SceneObject, TriangleMesh},
+};
 
 const SCALE: usize = 2;
 const IMAGE_WIDTH: usize = 512 * SCALE;
@@ -24,7 +28,7 @@ fn set_color(pixel: &mut [u8], col: &Vec3) {
 }
 
 fn _ambient_occlusion(
-    objects: &[Box<SceneObject>],
+    objects: &[SceneObject],
     pos: &Vec3,
     normal: &Vec3,
     rng: &mut dyn rand::RngCore,
@@ -35,21 +39,22 @@ fn _ambient_occlusion(
     for _ in 0..num_samples {
         let d = normal.get_cosine_distributed_random_ray(rng);
         if let Some(hit) = trace_ray(objects, pos, &d)
-            && hit.distance < distance_cutoff {
-                num_hits += 1;
-            }
+            && hit.distance < distance_cutoff
+        {
+            num_hits += 1;
+        }
     }
 
     1.0 - (num_hits as f64) / (num_samples as f64)
 }
 
 fn trace_ray<'a>(
-    objects: &'a [Box<SceneObject>],
+    objects: &'a [SceneObject],
     ray_src: &Vec3,
     ray_dir: &Vec3,
-) -> Option<scene_objects::HitRecord<'a>> {
+) -> Option<scene_objects::ObjectHitRecord<'a>> {
     //    println!("tracing ray from {} with {}", ray_src, ray_dir);
-    let mut hit_obj: Option<scene_objects::HitRecord> = None;
+    let mut hit_obj: Option<scene_objects::ObjectHitRecord> = None;
 
     for obj in objects.iter() {
         if let Some(hit) = obj.hit(ray_src, ray_dir) {
@@ -68,7 +73,7 @@ fn trace_ray<'a>(
 }
 
 fn get_color(
-    objects: &Vec<Box<SceneObject>>,
+    objects: &Vec<SceneObject>,
     ray_src: &Vec3,
     ray_dir: &Vec3,
     light_dir: &Vec3,
@@ -132,40 +137,36 @@ fn clamp(v: f64, min: f64, max: f64) -> f64 {
     v
 }
 
-fn create_scene() -> Vec<Box<SceneObject>> {
-    let mut objects: Vec<Box<SceneObject>> = vec![
-        Box::new(scene_objects::Sphere::new(
-            Vec3::new(-100.0, -80.0, 400.0),
-            40.0,
+fn create_scene() -> Vec<SceneObject> {
+    let mut objects: Vec<SceneObject> = vec![
+        SceneObject::new(
+            Sphere::new(Vec3::new(-100.0, -80.0, 400.0), 40.0),
             scene_objects::Material::new_diffuse(Vec3::new(0.8, 0.8, 0.8)),
-        )),
-        Box::new(scene_objects::Sphere::new(
-            Vec3::new(100.0, -80.0, 400.0),
-            40.0,
+        ),
+        SceneObject::new(
+            Sphere::new(Vec3::new(100.0, -80.0, 400.0), 40.0),
             scene_objects::Material::new_diffuse(Vec3::new(0.8, 0.8, 0.8)),
-        )),
+        ),
         /*  Box::new(scene_objects::Sphere::new(
             Vec3::new(0.0, 50.0, 700.0),
             350.0,
             scene_objects::Material::new(Vec3::new(0.8, 0.8, 0.0), 0.1, 1.0, 10.0),
         )),*/
-        Box::new(scene_objects::Sphere::new(
-            Vec3::new(100.0, -80.0, 370.0),
-            20.0,
+        SceneObject::new(
+            Sphere::new(Vec3::new(100.0, -80.0, 370.0), 20.0),
             scene_objects::Material::new(Vec3::new(0.1, 0.1, 0.1), 0.0, 1.0, 20.0),
-        )),
-        Box::new(scene_objects::Sphere::new(
-            Vec3::new(-100.0, -80.0, 370.0),
-            20.0,
+        ),
+        SceneObject::new(
+            Sphere::new(Vec3::new(-100.0, -80.0, 370.0), 20.0),
             scene_objects::Material::new(Vec3::new(0.1, 0.1, 0.1), 0.0, 1.0, 20.0),
-        )),
-        Box::new(scene_objects::Plane::new(
-            Vec3::new(0.0, 200.0, 0.0),
-            Vec3::new(0.0, -1.0, 0.0),
+        ),
+        SceneObject::new(
+            Plane::new(Vec3::new(0.0, 200.0, 0.0), Vec3::new(0.0, -1.0, 0.0)),
             scene_objects::Material::new_diffuse(Vec3::new(0.1, 0.5, 0.1)),
-        )),
+        ),
     ];
 
+    /*
     use rand::SeedableRng;
     let mut rng = rand::rngs::SmallRng::seed_from_u64(44);
     use crate::rand::Rng;
@@ -193,19 +194,17 @@ fn create_scene() -> Vec<Box<SceneObject>> {
             ),
         )));
     }
+    */
 
-    objects.push(Box::new(
-        TriangleMesh::from_obj_file(
-            "data/bunny.obj",
-            Material::new(Vec3::new(0.8, 0.2, 0.2), 0.0, 0.3, 32.0),
-        )
-        .expect("Valid OBJ"),
+    objects.push(SceneObject::new(
+        TriangleMesh::from_obj_file("data/bunny.obj").expect("Valid OBJ"),
+        Material::new(Vec3::new(0.8, 0.2, 0.2), 0.0, 0.3, 32.0),
     ));
 
     objects
 }
 
-fn _trace_line_360_sbs(row: &mut [u8], row_idx: usize, objects: &Vec<Box<SceneObject>>) {
+fn _trace_line_360_sbs(row: &mut [u8], row_idx: usize, objects: &Vec<SceneObject>) {
     println!("Tracing line {row_idx}");
     let ray_src = Vec3::new(0.0, 0.0, 0.0);
     let light_dir = Vec3::new(-1.0, -1.0, -1.0).normalized();
@@ -242,7 +241,7 @@ fn _trace_line_360_sbs(row: &mut [u8], row_idx: usize, objects: &Vec<Box<SceneOb
     }
 }
 
-fn _trace_line(row: &mut [u8], row_idx: usize, objects: &Vec<Box<SceneObject>>) {
+fn _trace_line(row: &mut [u8], row_idx: usize, objects: &Vec<SceneObject>) {
     println!("Tracing line {row_idx}");
     let ray_src = Vec3::new(0.0, 0.0, 0.0);
     let light_dir = Vec3::new(-1.0, -1.0, -1.0).normalized();

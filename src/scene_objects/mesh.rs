@@ -1,5 +1,6 @@
 use crate::{
-    math::{Axis, Bounded3D, BoundingBox, Range, Vec3}, scene_objects::{HitRecord, Material, Object3D}
+    math::{Axis, Bounded3D, BoundingBox, GeometryHitRecord, Triangle, Vec3},
+    scene_objects::Geometry3D,
 };
 
 pub struct KDTreeNodeSubdivision {
@@ -10,7 +11,12 @@ pub struct KDTreeNodeSubdivision {
 }
 
 impl KDTreeNodeSubdivision {
-    fn hit_recursive(&self, ray_src: &Vec3, ray_dir: &Vec3, best_hit: &mut Option<(f64, Vec3)>) {
+    fn hit_recursive(
+        &self,
+        ray_src: &Vec3,
+        ray_dir: &Vec3,
+        best_hit: &mut Option<GeometryHitRecord>,
+    ) {
         if ray_src.get(self.axis) == self.position {
             /* Edge case: if the ray starts *on* the split plane then both half-spaces must be
             checked, because both may contain geometry that lies exactly on the split plane. */
@@ -36,7 +42,7 @@ impl KDTreeNodeSubdivision {
         let distance_to_split_plane = if ray_component == 0.0 {
             /* If ray is parallel to the split plane and does not lie *on* the plane (checked in
             the first condition of this function) => can never cross into the other half-space. */
-            return
+            return;
         } else {
             /* `self.position - ray_src.get(self.axis)` is the `self.axis` component of the distance
             from `ray_src` to the split plane. Dividing this by `ray_component` gives the number of times
@@ -47,15 +53,15 @@ impl KDTreeNodeSubdivision {
             if dist < 0.0 {
                 /* If `dist` is < 0.0 then the ray points away from the split plane, so it will
                 never reach that plane nor the other half space. */
-                return
+                return;
             };
-            
+
             dist
         };
 
         let other_halfspace_may_have_better_hit = match best_hit {
             // only possible if other half space is closer than the best hit yet
-            Some((best_hit_distance, _)) => distance_to_split_plane < *best_hit_distance,
+            Some(best_hit) => distance_to_split_plane < best_hit.distance,
             None => true, // no hit yet -> any hit in other halfspace would be better
         };
 
@@ -68,23 +74,31 @@ impl KDTreeNodeSubdivision {
         point has already been tested. This updated ray position is necessary for recursive calls
         to accurately determine through which of its half-spaces the ray passes. */
         let ray_src = ray_src + ray_dir * distance_to_split_plane;
-        if let Some((best_distance, normal)) = best_hit {
-            assert!(*best_distance >= distance_to_split_plane);
+        if let Some(best_hit) = best_hit {
+            assert!(best_hit.distance >= distance_to_split_plane);
 
             let mut best_hit_child = None;
             other_child.hit_recursive(&ray_src, ray_dir, &mut best_hit_child);
-            if let Some((child_distance, child_normal)) = best_hit_child && (distance_to_split_plane + child_distance < *best_distance) {
-                *best_distance = distance_to_split_plane + child_distance;
-                *normal = child_normal;
+            if let Some(child_hit) = best_hit_child
+                && (distance_to_split_plane + child_hit.distance < best_hit.distance)
+            {
+                *best_hit = GeometryHitRecord {
+                    distance: distance_to_split_plane + child_hit.distance,
+                    normal: child_hit.normal,
+                };
             }
         } else {
             other_child.hit_recursive(&ray_src, ray_dir, best_hit);
-            best_hit.as_mut().map(|(best_distance, _)| *best_distance += distance_to_split_plane);
+            if let Some(best_hit) = best_hit {
+                // Account for the distance from the original ray source to the split plane, which
+                // is not included in the child hit record.
+                best_hit.distance += distance_to_split_plane;
+            }
         }
     }
 }
 
-struct KDTreeNode {
+pub struct KDTreeNode {
     children: Vec<Triangle<Vec3>>,
     subdivision: Option<Box<KDTreeNodeSubdivision>>,
 }
@@ -92,7 +106,7 @@ struct KDTreeNode {
 const MAX_ITEMS_PER_NODE: usize = 64;
 
 impl KDTreeNode {
-    fn new(items: Vec<Triangle<Vec3>>) -> Self {
+    pub fn new(items: Vec<Triangle<Vec3>>) -> Self {
         if items.len() < MAX_ITEMS_PER_NODE {
             return KDTreeNode {
                 children: items,
@@ -147,19 +161,18 @@ impl KDTreeNode {
         BoundingBox::from_items(&self.children)
     }
 
-    fn hit_recursive(&self, ray_src: &Vec3, ray_dir: &Vec3, best_hit: &mut Option<(f64, Vec3)>) {
+    pub fn hit_recursive(
+        &self,
+        ray_src: &Vec3,
+        ray_dir: &Vec3,
+        best_hit: &mut Option<GeometryHitRecord>,
+    ) {
         for triangle in &self.children {
-            if let Some(hit_pos) = triangle.intersects(*ray_src, *ray_dir) {
-                let distance = (ray_src - &hit_pos).len();
-                let this_is_best = match best_hit {
-                    Some((best_distance, _)) => *best_distance > distance,
-                    None => true,
-                };
-                if this_is_best {
-                    let e1 = triangle.v3 - triangle.v1;
-                    let e2 = triangle.v2 - triangle.v1;
-                    *best_hit = Some((distance, -e1.cross(e2).normalized()));
-                }
+            if let Some(this_hit) = triangle.hit(ray_src, ray_dir) {
+                *best_hit = Some(match best_hit {
+                    Some(prev) => prev.min(this_hit),
+                    None => this_hit,
+                });
             }
         }
 
@@ -220,191 +233,4 @@ impl KDTreeNode {
         }
     }
     */
-}
-
-impl Bounded3D for Vec3 {
-    fn bounds(&self) -> BoundingBox {
-        BoundingBox {
-            x: Range::new(self.x),
-            y: Range::new(self.y),
-            z: Range::new(self.z),
-        }
-    }
-}
-
-pub struct Triangle<T> {
-    pub v1: T,
-    pub v2: T,
-    pub v3: T,
-}
-
-impl<T> Triangle<T> {
-    pub fn new(v1: T, v2: T, v3: T) -> Self {
-        Triangle { v1, v2, v3 }
-    }
-}
-
-impl Triangle<Vec3> {
-    // Taken from https://en.wikipedia.org/wiki/M%C3%B6ller%E2%80%93Trumbore_intersection_algorithm
-    fn intersects(&self, ray_origin: Vec3, ray_direction: Vec3) -> Option<Vec3> {
-        let e1 = self.v2 - self.v1;
-        let e2 = self.v3 - self.v1;
-
-        let ray_cross_e2 = ray_direction.cross(e2);
-        let det = e1.dot(ray_cross_e2);
-
-        if det > -f64::EPSILON && det < f64::EPSILON {
-            return None; // This ray is parallel to this triangle.
-        }
-
-        let inv_det = 1.0 / det;
-        let s = ray_origin - self.v1;
-        let u = inv_det * s.dot(ray_cross_e2);
-        if !(0.0..=1.0).contains(&u) {
-            return None;
-        }
-
-        let s_cross_e1 = s.cross(e1);
-        let v = inv_det * ray_direction.dot(s_cross_e1);
-        if v < 0.0 || u + v > 1.0 {
-            return None;
-        }
-        // At this stage we can compute t to find out where the intersection point is on the line.
-        let t = inv_det * e2.dot(s_cross_e1);
-
-        if t > f64::EPSILON {
-            // ray intersection
-            Some(ray_origin + ray_direction * t)
-        } else {
-            // This means that there is a line intersection but not a ray intersection.
-            None
-        }
-    }
-}
-
-impl Bounded3D for Triangle<Vec3> {
-    fn bounds(&self) -> BoundingBox {
-        self.v1.bounds() | self.v2.bounds() | self.v3.bounds()
-    }
-}
-
-pub fn parse_obj(filename: &str) -> std::io::Result<Vec<Triangle<Vec3>>> {
-    let mut vertices = Vec::new();
-    let mut faces = Vec::<(usize, usize, usize)>::new();
-
-    for l in std::fs::read_to_string(filename)?.lines() {
-        let line = l.trim();
-        if line.is_empty() {
-            // skip emtpy lines
-            continue;
-        }
-
-        if line.starts_with('#') {
-            // skip comment lines
-            continue;
-        }
-
-        let mut parts = line.split(' ');
-        let mut next = || {
-            parts
-                .next()
-                .ok_or(std::io::Error::from(std::io::ErrorKind::Other))
-        };
-        let indicator = next()?;
-        match indicator {
-            "f" => {
-                faces.push((
-                    next()?.parse().expect("int"),
-                    next()?.parse().expect("int"),
-                    next()?.parse().expect("int"),
-                ));
-            }
-            "v" => {
-                vertices.push(Vec3::new(
-                    next()?.parse().expect("f64"),
-                    next()?.parse().expect("f64"),
-                    next()?.parse().expect("f64"),
-                ));
-            }
-            _ => panic!("Unexpected indicator {}", indicator),
-        }
-        if let Ok(el) = next() {
-            panic!("Found trailing element {el}");
-        }
-    }
-
-    // Obj face indices are one-based, so shift to zero-based array indices
-    Ok(faces
-        .into_iter()
-        .map(|(i1, i2, i3)| Triangle::new(vertices[i1 - 1], vertices[i2 - 1], vertices[i3 - 1]))
-        .collect())
-}
-
-pub struct TriangleMesh {
-    geometry: KDTreeNode,
-    material: Material,
-    bounds: BoundingBox,
-}
-
-fn map_vertices<T, U, F>(src: &[Triangle<T>], trans: F) -> Vec<Triangle<U>>
-where
-    F: Fn(&T) -> U,
-{
-    src.iter()
-        .map(|Triangle { v1, v2, v3 }| Triangle::new(trans(v1), trans(v2), trans(v3)))
-        .collect()
-}
-
-impl TriangleMesh {
-    pub fn from_obj_file(file_name: &str, material: Material) -> std::io::Result<TriangleMesh> {
-        let triangles = parse_obj(file_name)?;
-
-        let triangles = map_vertices(&triangles, |v| {
-            Vec3::new(
-                v.x * 10000.0,
-                v.y * -10000.0 + 500.0,
-                -v.z * 10000.0 + 1500.0,
-            )
-        });
-
-        // The mesh is only valid if it has at least one triangle (Otherwise, no bounds can be established)
-        let mut bounds = triangles
-            .first()
-            .ok_or(std::io::Error::from(std::io::ErrorKind::InvalidInput))?
-            .v1
-            .bounds();
-        for t in &triangles {
-            bounds |= t.v1;
-            bounds |= t.v2;
-            bounds |= t.v3;
-        }
-        Ok(TriangleMesh {
-            geometry: KDTreeNode::new(triangles),
-            material,
-            bounds,
-        })
-    }
-}
-
-impl Object3D for TriangleMesh {
-    fn hit(&self, ray_src: &Vec3, ray_dir: &Vec3) -> Option<HitRecord<'_>> {
-        let mut best_hit = None;
-        self.geometry.hit_recursive(ray_src, ray_dir, &mut best_hit);
-
-        best_hit.map(|(distance, normal)| HitRecord {
-            distance,
-            object: self,
-            normal,
-        })
-    }
-
-    fn get_material(&self) -> &Material {
-        &self.material
-    }
-}
-
-impl Bounded3D for TriangleMesh {
-    fn bounds(&self) -> BoundingBox {
-        self.bounds
-    }
 }

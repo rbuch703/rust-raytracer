@@ -1,11 +1,8 @@
-mod sphere;
-mod plane;
 mod mesh;
-pub use sphere::Sphere;
-pub use plane::Plane;
-pub use mesh::TriangleMesh;
+use crate::math::{Geometry3D, Vec3};
 
-use crate::math::Vec3;
+mod triangle_mesh;
+pub use triangle_mesh::TriangleMesh;
 
 pub struct Material {
     pub color: Vec3,
@@ -49,15 +46,51 @@ impl Material {
     }
 }
 
-pub trait Object3D {
-    fn hit(&self, ray_src: &Vec3, ray_dir: &Vec3) -> Option<HitRecord<'_>>;
-    fn get_material(&self) -> &Material;
+//pub type SceneObject = dyn Object3D + Sync + Send;
+
+pub struct SceneObject {
+    geometry: Box<dyn Geometry3D + Sync + Send>,
+    material: Material,
 }
 
-pub type SceneObject = dyn Object3D + Sync + Send;
+impl SceneObject {
+    pub fn new(
+        geometry: impl Geometry3D + Sync + Send + 'static,
+        material: Material,
+    ) -> SceneObject {
+        SceneObject {
+            geometry: Box::new(geometry),
+            material,
+        }
+    }
 
-pub struct HitRecord<'a> {
+    pub fn _from_random_material(
+        geometry: Box<dyn Geometry3D + Sync + Send>,
+        rng: &mut dyn rand::RngCore,
+    ) -> SceneObject {
+        SceneObject {
+            geometry,
+            material: Material::_rand(rng),
+        }
+    }
+
+    pub fn get_material(&self) -> &Material {
+        &self.material
+    }
+
+    pub fn hit(&self, ray_origin: &Vec3, ray_direction: &Vec3) -> Option<ObjectHitRecord<'_>> {
+        self.geometry
+            .hit(ray_origin, ray_direction)
+            .map(|hit_record| ObjectHitRecord {
+                distance: hit_record.distance,
+                normal: hit_record.normal,
+                object: self,
+            })
+    }
+}
+
+pub struct ObjectHitRecord<'a> {
     pub distance: f64,
-    pub object: &'a dyn Object3D,
     pub normal: Vec3,
+    pub object: &'a SceneObject,
 }
