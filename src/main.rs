@@ -13,10 +13,10 @@ use scene_objects::Material;
 use crate::{
     math::{Plane, Sphere, Vec3},
     scene_objects::{KDTreeNode, SceneObject, SimpleSceneObject},
-    utils::parse_obj,
+    utils::{compute_vertex_normals, parse_obj},
 };
 
-const SCALE: usize = 8;
+const SCALE: usize = 2;
 const IMAGE_WIDTH: usize = 512 * SCALE;
 const IMAGE_HEIGHT_HALF: usize = 256 * SCALE;
 const IMAGE_HEIGHT: usize = IMAGE_HEIGHT_HALF * 2;
@@ -105,7 +105,7 @@ fn get_color(
         if recursion_depth < 2 {
             // Compute ambient occlusion only for the object hit by the camera ray and the first
             // reflection, to save some computation time.
-            //brightness *= _ambient_occlusion(objects, &p_hit, &n, _rng, 100, 200.0)
+            brightness *= _ambient_occlusion(objects, &p_hit, &n, _rng, 100, 200.0)
         }
         let color = material.color * brightness + light_color * specular;
         if material.reflectance > 0.0 {
@@ -194,19 +194,24 @@ fn create_scene() -> Vec<SimpleSceneObject> {
     }
     */
 
-    for triangle in parse_obj("data/bunny.obj").expect("Valid OBJ") {
-        let transform = |v: Vec3| {
-            Vec3::new(
-                v.x * 10000.0,
-                v.y * -10000.0 + 500.0,
-                -v.z * 10000.0 + 1000.0,
-            )
-        };
-        let triangle = crate::math::Triangle::new(
-            transform(triangle.v1),
-            transform(triangle.v2),
-            transform(triangle.v3),
-        );
+    let triangles = parse_obj("data/bunny.obj")
+        .expect("Valid OBJ")
+        .into_iter()
+        .map(|(v1, v2, v3)| {
+            let transform = |v: Vec3| {
+                Vec3::new(
+                    v.x * 10000.0,
+                    v.y * -10000.0 + 500.0,
+                    -v.z * 10000.0 + 1000.0,
+                )
+            };
+
+            (transform(v1), transform(v2), transform(v3))
+        })
+        .collect::<Vec<_>>();
+
+    let triangles = compute_vertex_normals(&triangles);
+    for triangle in triangles {
         objects.push(SimpleSceneObject::new(
             triangle,
             Material::new(Vec3::new(0.8, 0.2, 0.2), 0.0, 0.3, 32.0),
